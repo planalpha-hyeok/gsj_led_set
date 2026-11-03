@@ -82,10 +82,10 @@ LED 전광판 여러 대를 하나의 캔버스(전체 해상도)로 묶어 재�
 
 ## 개발자용: 직접 빌드
 
-필요한 것: Visual Studio 2022 (C++ 데스크톱 개발), CMake 3.21 이상, Qt 6.5 이상 (MSVC 64비트), FFmpeg 7.x shared 빌드
+필요한 것: Visual Studio 2022 (C++ 데스크톱 개발), CMake 3.21 이상, Qt 6.5 이상 (MSVC 64비트), FFmpeg 6.x ~ 8.x shared 빌드
 
 ```bat
-set FFMPEG_ROOT=C:\ffmpeg\ffmpeg-n7.1-latest-win64-lgpl-shared-7.1
+set FFMPEG_ROOT=C:\ffmpeg\ffmpeg-n8.1-latest-win64-lgpl-shared-8.1
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH=C:\Qt\6.7.3\msvc2019_64
 cmake --build build --config Release
 ctest --test-dir build -C Release

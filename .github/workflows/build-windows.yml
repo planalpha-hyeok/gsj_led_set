@@ -31,14 +31,15 @@ jobs:
         run: |
           $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; "User-Agent" = "gsj-led-player-ci" }
           $release = Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/tags/latest"
-          # 버전 고정 빌드(n7.x) 중 가장 높은 버전 선택
-          $asset = $release.assets |
-            Where-Object { $_.name -match '^ffmpeg-n7\.\d+-latest-win64-lgpl-shared-7\.\d+\.zip$' } |
-            Sort-Object { [version](($_.name -replace '^ffmpeg-n(7\.\d+).*$', '$1')) } -Descending |
-            Select-Object -First 1
+          # 버전 고정 빌드(nX.Y) 중 8.x 우선, 없으면 가장 높은 버전
+          $candidates = $release.assets |
+            Where-Object { $_.name -match '^ffmpeg-n\d+\.\d+-latest-win64-lgpl-shared-\d+\.\d+\.zip$' } |
+            Sort-Object { [version](($_.name -replace '^ffmpeg-n(\d+\.\d+).*$', '$1')) } -Descending
+          $asset = $candidates | Where-Object { $_.name -match '^ffmpeg-n8\.' } | Select-Object -First 1
+          if (-not $asset) { $asset = $candidates | Select-Object -First 1 }
           if (-not $asset) {
             $release.assets | ForEach-Object { Write-Host $_.name }
-            throw "FFmpeg 7.x LGPL shared 빌드를 찾을 수 없음"
+            throw "FFmpeg LGPL shared 빌드를 찾을 수 없음"
           }
           Write-Host "FFmpeg: $($asset.name)"
           Invoke-WebRequest -Uri $asset.browser_download_url -OutFile ffmpeg.zip
