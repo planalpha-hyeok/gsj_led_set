@@ -195,10 +195,22 @@ std::string minuteToString(int minute)
 
 bool minuteFromString(const std::string& text, int& out)
 {
+    // 형식: H:MM 또는 HH:MM
+    const std::size_t colon = text.find(':');
+    if (colon == std::string::npos || colon == 0 || colon > 2 || text.size() != colon + 3)
+        return false;
+    auto digits = [&](std::size_t from, std::size_t to, int& value) {
+        value = 0;
+        for (std::size_t i = from; i < to; ++i) {
+            if (text[i] < '0' || text[i] > '9')
+                return false;
+            value = value * 10 + (text[i] - '0');
+        }
+        return true;
+    };
     int h = 0;
     int m = 0;
-    char extra = 0;
-    if (std::sscanf(text.c_str(), "%d:%d%c", &h, &m, &extra) != 2)
+    if (!digits(0, colon, h) || !digits(colon + 1, text.size(), m))
         return false;
     if (h < 0 || h > 23 || m < 0 || m > 59)
         return false;
