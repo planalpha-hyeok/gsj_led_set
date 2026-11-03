@@ -1,6 +1,6 @@
 #pragma once
 
-// 영역 목록과 선택된 영역의 속성(좌표, 콘텐츠, 맞춤 방식 등) 편집
+// 영역 목록, 선택된 영역의 위치/표시 방식, 콘텐츠(편집 중인 장면 기준) 편집
 
 #include <QWidget>
 
@@ -13,6 +13,7 @@ class QSpinBox;
 
 namespace led {
 
+class ContentEditor;
 class ProjectController;
 
 class RegionPanel : public QWidget {
@@ -26,8 +27,6 @@ private slots:
     void loadSelected();
     void onListSelectionChanged();
     void commit();
-    void browseSource();
-    void clearSource();
 
 private:
     QString currentId() const;
@@ -45,13 +44,10 @@ private:
     QSpinBox* m_y;
     QSpinBox* m_w;
     QSpinBox* m_h;
-    QLineEdit* m_source;
-    QPushButton* m_browseButton;
-    QPushButton* m_clearButton;
     QComboBox* m_fit;
-    QCheckBox* m_loop;
     QSpinBox* m_opacity;
     QCheckBox* m_visible;
+    ContentEditor* m_content;
 
     bool m_loading = false;
 };

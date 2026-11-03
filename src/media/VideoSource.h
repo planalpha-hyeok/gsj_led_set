@@ -23,6 +23,8 @@ public:
     bool waitForFirstFrame(int timeoutMs) override;
     void stop() override;
     const std::string& path() const override;
+    double durationHint() const override;
+    double endTime() const override;
 
 private:
     struct Impl;

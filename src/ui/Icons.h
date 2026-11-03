@@ -14,5 +14,6 @@ QIcon stop();
 QIcon output();
 QIcon testPattern();
 QIcon fit();
+QIcon schedule();
 
 } // namespace led::icons

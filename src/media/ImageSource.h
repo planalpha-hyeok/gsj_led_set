@@ -15,6 +15,7 @@ public:
     bool waitForFirstFrame(int timeoutMs) override;
     void stop() override {}
     const std::string& path() const override { return m_path; }
+    bool isStill() const override { return true; }
 
 private:
     std::string m_path;

@@ -51,12 +51,20 @@ void ProjectController::newProject()
     region.rect = RectI{0, 0, 1920, 1080};
     p.regions.push_back(region);
 
+    Scene scene;
+    scene.id = generateId();
+    scene.name = "장면 1";
+    p.scenes.push_back(scene);
+    p.schedule.defaultSceneId = scene.id;
+
     m_project = std::move(p);
     m_filePath.clear();
     m_selectedRegion = QString::fromStdString(region.id);
+    m_editingScene = QString::fromStdString(scene.id);
     setDirty(false);
     emit projectReset();
     emit regionSelected(m_selectedRegion);
+    emit editingSceneChanged(m_editingScene);
 }
 
 bool ProjectController::load(const QString& path, QString* error)
@@ -67,9 +75,11 @@ bool ProjectController::load(const QString& path, QString* error)
     m_project = std::move(p);
     m_filePath = path;
     m_selectedRegion = m_project.regions.empty() ? QString() : QString::fromStdString(m_project.regions.back().id);
+    m_editingScene = QString::fromStdString(m_project.scenes.front().id);
     setDirty(false);
     emit projectReset();
     emit regionSelected(m_selectedRegion);
+    emit editingSceneChanged(m_editingScene);
     return true;
 }
 
@@ -104,6 +114,12 @@ void ProjectController::removeRegion(const QString& id)
     if (it == regions.end())
         return;
     regions.erase(it);
+    for (Scene& scene : m_project.scenes) {
+        auto& c = scene.contents;
+        c.erase(std::remove_if(c.begin(), c.end(),
+                               [&](const RegionContent& rc) { return rc.regionId == id.toStdString(); }),
+                c.end());
+    }
     if (m_selectedRegion == id)
         m_selectedRegion = regions.empty() ? QString() : QString::fromStdString(regions.back().id);
     setDirty(true);
@@ -220,6 +236,154 @@ void ProjectController::setCanvasSize(int width, int height)
     m_project.canvas.height = height;
     setDirty(true);
     emit canvasChanged();
+}
+
+// ---------------------------------------------------------------- 장면
+
+const Scene* ProjectController::editingScene() const
+{
+    return m_project.findScene(m_editingScene.toStdString());
+}
+
+void ProjectController::setEditingScene(const QString& id)
+{
+    if (m_editingScene == id || !m_project.findScene(id.toStdString()))
+        return;
+    m_editingScene = id;
+    emit editingSceneChanged(id);
+}
+
+QString ProjectController::addScene()
+{
+    Scene scene;
+    scene.id = generateId();
+    scene.name = "장면 " + std::to_string(m_project.scenes.size() + 1);
+    m_project.scenes.push_back(scene);
+    setDirty(true);
+    emit scenesChanged();
+    const QString id = QString::fromStdString(scene.id);
+    setEditingScene(id);
+    return id;
+}
+
+QString ProjectController::duplicateScene(const QString& id)
+{
+    const Scene* source = m_project.findScene(id.toStdString());
+    if (!source)
+        return {};
+    Scene copy = *source;
+    copy.id = generateId();
+    copy.name = source->name + " (복사)";
+    for (RegionContent& c : copy.contents)
+        for (PlaylistItem& item : c.items)
+            item.id = generateId();
+    m_project.scenes.push_back(copy);
+    setDirty(true);
+    emit scenesChanged();
+    const QString newId = QString::fromStdString(copy.id);
+    setEditingScene(newId);
+    return newId;
+}
+
+void ProjectController::renameScene(const QString& id, const QString& name)
+{
+    Scene* scene = m_project.findScene(id.toStdString());
+    const std::string text = name.trimmed().toStdString();
+    if (!scene || text.empty() || scene->name == text)
+        return;
+    scene->name = text;
+    setDirty(true);
+    emit scenesChanged();
+}
+
+bool ProjectController::removeScene(const QString& id)
+{
+    auto& scenes = m_project.scenes;
+    if (scenes.size() <= 1)
+        return false;
+    const auto it = std::find_if(scenes.begin(), scenes.end(),
+                                 [&](const Scene& s) { return s.id == id.toStdString(); });
+    if (it == scenes.end())
+        return false;
+    scenes.erase(it);
+    if (m_project.schedule.defaultSceneId == id.toStdString())
+        m_project.schedule.defaultSceneId = scenes.front().id;
+    setDirty(true);
+    emit scenesChanged();
+    emit scheduleChanged();
+    if (m_editingScene == id) {
+        m_editingScene = QString::fromStdString(scenes.front().id);
+        emit editingSceneChanged(m_editingScene);
+    }
+    return true;
+}
+
+void ProjectController::moveScene(const QString& id, int delta)
+{
+    auto& scenes = m_project.scenes;
+    const auto it = std::find_if(scenes.begin(), scenes.end(),
+                                 [&](const Scene& s) { return s.id == id.toStdString(); });
+    if (it == scenes.end())
+        return;
+    const int index = static_cast<int>(it - scenes.begin());
+    const int target = index + delta;
+    if (target < 0 || target >= static_cast<int>(scenes.size()))
+        return;
+    std::swap(scenes[static_cast<std::size_t>(index)], scenes[static_cast<std::size_t>(target)]);
+    setDirty(true);
+    emit scenesChanged();
+}
+
+// ---------------------------------------------------------------- 콘텐츠
+
+const RegionContent* ProjectController::contentFor(const QString& sceneId, const QString& regionId) const
+{
+    const Scene* scene = m_project.findScene(sceneId.toStdString());
+    return scene ? scene->contentFor(regionId.toStdString()) : nullptr;
+}
+
+void ProjectController::setContent(const QString& sceneId, const RegionContent& content)
+{
+    Scene* scene = m_project.findScene(sceneId.toStdString());
+    if (!scene || !m_project.findRegion(content.regionId))
+        return;
+    RegionContent* existing = scene->contentFor(content.regionId);
+    if (existing) {
+        if (*existing == content)
+            return;
+        *existing = content;
+    } else {
+        scene->contents.push_back(content);
+    }
+    setDirty(true);
+    emit contentChanged(sceneId, QString::fromStdString(content.regionId));
+}
+
+// ---------------------------------------------------------------- 스케줄 / 운영
+
+void ProjectController::setSchedule(const Schedule& schedule)
+{
+    m_project.schedule = schedule;
+    setDirty(true);
+    emit scheduleChanged();
+}
+
+void ProjectController::setScheduleEnabled(bool enabled)
+{
+    if (m_project.schedule.enabled == enabled)
+        return;
+    m_project.schedule.enabled = enabled;
+    setDirty(true);
+    emit scheduleChanged();
+}
+
+void ProjectController::setAutoStart(bool enabled)
+{
+    if (m_project.autoStart == enabled)
+        return;
+    m_project.autoStart = enabled;
+    setDirty(true);
+    emit scheduleChanged();
 }
 
 } // namespace led

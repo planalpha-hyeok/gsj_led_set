@@ -7,7 +7,9 @@
 #include "ui/Theme.h"
 
 #include <QApplication>
+#include <QFileInfo>
 #include <QImageReader>
+#include <QSettings>
 
 int main(int argc, char* argv[])
 {
@@ -36,9 +38,17 @@ int main(int argc, char* argv[])
             led::logInfo("로그 파일: " + logPath.toStdString());
 
         window.show();
+
+        // 명령줄로 받은 프로젝트, 없으면 마지막으로 연 프로젝트를 엶
         const QStringList args = QApplication::arguments();
-        if (args.size() > 1)
-            window.openProjectFile(args.at(1));
+        QString projectPath = args.size() > 1 ? args.at(1) : QString();
+        if (projectPath.isEmpty()) {
+            const QString last = QSettings().value(QStringLiteral("lastProject")).toString();
+            if (!last.isEmpty() && QFileInfo::exists(last))
+                projectPath = last;
+        }
+        if (!projectPath.isEmpty() && window.openProjectFile(projectPath))
+            window.startAutomaticallyIfEnabled();
 
         result = app.exec();
     }

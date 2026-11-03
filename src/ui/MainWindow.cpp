@@ -3,6 +3,7 @@
 #include "core/Log.h"
 #include "output/OutputManager.h"
 #include "playback/PlaybackEngine.h"
+#include "schedule/ScheduleRunner.h"
 #include "ui/CanvasPanel.h"
 #include "ui/CanvasView.h"
 #include "ui/Icons.h"
@@ -10,6 +11,8 @@
 #include "ui/OutputPanel.h"
 #include "ui/ProjectController.h"
 #include "ui/RegionPanel.h"
+#include "ui/ScenePanel.h"
+#include "ui/SchedulePanel.h"
 
 #include <QAction>
 #include <QApplication>
@@ -20,6 +23,7 @@
 #include <QLabel>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QSettings>
 #include <QSignalBlocker>
 #include <QStatusBar>
 #include <QTabWidget>
@@ -33,6 +37,12 @@ const char kProjectFilter[] = "LED 프로젝트 (*.ledproj);;JSON (*.json);;모�
 constexpr int kOutputRestartDelayMs = 300;
 constexpr int kMaxErrorsInDialog = 12;
 
+void setCheckedSilently(QAction* action, bool checked)
+{
+    const QSignalBlocker blocker(action);
+    action->setChecked(checked);
+}
+
 } // namespace
 
 MainWindow::MainWindow(QWidget* parent)
@@ -40,11 +50,12 @@ MainWindow::MainWindow(QWidget* parent)
     , m_controller(new ProjectController(this))
     , m_engine(std::make_unique<PlaybackEngine>())
     , m_outputs(new OutputManager(m_engine.get(), this))
+    , m_schedule(new ScheduleRunner([this]() -> const Project& { return m_controller->project(); }, this))
     , m_canvasView(new CanvasView(m_controller, this))
 {
     setCentralWidget(m_canvasView);
-    setMinimumSize(1000, 640);
-    resize(1440, 880);
+    setMinimumSize(1100, 700);
+    resize(1500, 920);
 
     createDocks();
     createActions();
@@ -57,13 +68,25 @@ MainWindow::MainWindow(QWidget* parent)
     connect(&m_outputRestartTimer, &QTimer::timeout, this, &MainWindow::restartOutputs);
 
     connect(m_controller, &ProjectController::regionsChanged, this, &MainWindow::onRegionsChanged);
+    connect(m_controller, &ProjectController::contentChanged, this, &MainWindow::onPlaybackContentChanged);
+    connect(m_controller, &ProjectController::scenesChanged, this, &MainWindow::onPlaybackContentChanged);
     connect(m_controller, &ProjectController::outputsChanged, this, &MainWindow::onOutputsChanged);
     connect(m_controller, &ProjectController::canvasChanged, this, &MainWindow::updateStatus);
     connect(m_controller, &ProjectController::dirtyChanged, this, &MainWindow::updateTitle);
+    connect(m_controller, &ProjectController::scheduleChanged, this, [this] {
+        m_schedule->reevaluate();
+        updateStatus();
+    });
     connect(m_controller, &ProjectController::projectReset, this, [this] {
         updateTitle();
         updateStatus();
     });
+
+    connect(m_schedule, &ScheduleRunner::sceneRequested, this, &MainWindow::onScheduledScene);
+    connect(m_schedule, &ScheduleRunner::statusChanged, m_schedulePanel, &SchedulePanel::setStatusText);
+    connect(m_schedule, &ScheduleRunner::statusChanged, this, &MainWindow::updateStatus);
+    connect(m_scenePanel, &ScenePanel::playSceneRequested, this, &MainWindow::playScene);
+    m_schedulePanel->setStatusText(QString());
 
     updateTitle();
     updateStatus();
@@ -72,6 +95,7 @@ MainWindow::MainWindow(QWidget* parent)
 MainWindow::~MainWindow()
 {
     // 출력 스레드가 재생 엔진을 참조하므로 출력을 먼저 정지
+    m_schedule->setActive(false);
     m_outputs->stop();
     m_engine->stop();
 }
@@ -80,6 +104,10 @@ void MainWindow::createDocks()
 {
     auto* tabs = new QTabWidget(this);
     tabs->addTab(new RegionPanel(m_controller, tabs), QStringLiteral("영역"));
+    m_scenePanel = new ScenePanel(m_controller, tabs);
+    tabs->addTab(m_scenePanel, QStringLiteral("장면"));
+    m_schedulePanel = new SchedulePanel(m_controller, tabs);
+    tabs->addTab(m_schedulePanel, QStringLiteral("스케줄"));
     m_outputPanel = new OutputPanel(m_controller, tabs);
     tabs->addTab(m_outputPanel, QStringLiteral("출력"));
     tabs->addTab(new CanvasPanel(m_controller, tabs), QStringLiteral("캔버스"));
@@ -88,7 +116,7 @@ void MainWindow::createDocks()
     propertiesDock->setObjectName("propertiesDock");
     propertiesDock->setWidget(tabs);
     propertiesDock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
-    propertiesDock->setMinimumWidth(400);
+    propertiesDock->setMinimumWidth(460);
     addDockWidget(Qt::RightDockWidgetArea, propertiesDock);
 
     m_logPanel = new LogPanel(this);
@@ -98,7 +126,7 @@ void MainWindow::createDocks()
     logDock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable |
                          QDockWidget::DockWidgetClosable);
     addDockWidget(Qt::BottomDockWidgetArea, logDock);
-    resizeDocks({logDock}, {150}, Qt::Vertical);
+    resizeDocks({logDock}, {140}, Qt::Vertical);
 }
 
 void MainWindow::createActions()
@@ -124,13 +152,19 @@ void MainWindow::createActions()
 
     m_playAction = new QAction(icons::play(), QStringLiteral("재생"), this);
     m_playAction->setShortcut(QKeySequence(Qt::Key_F5));
-    m_playAction->setToolTip(QStringLiteral("재생 (F5): 모든 영역을 처음부터 동시에 재생"));
+    m_playAction->setToolTip(QStringLiteral("재생 (F5): 편집 중인 장면을 처음부터 재생"));
     connect(m_playAction, &QAction::triggered, this, &MainWindow::play);
 
     m_stopAction = new QAction(icons::stop(), QStringLiteral("정지"), this);
     m_stopAction->setShortcut(QKeySequence(QStringLiteral("Shift+F5")));
-    m_stopAction->setToolTip(QStringLiteral("정지 (Shift+F5): 출력 화면은 검은색"));
+    m_stopAction->setToolTip(QStringLiteral("정지 (Shift+F5): 출력 화면은 검은색. 스케줄 운영도 끔"));
     connect(m_stopAction, &QAction::triggered, this, &MainWindow::stopPlayback);
+
+    m_scheduleAction = new QAction(icons::schedule(), QStringLiteral("스케줄 운영"), this);
+    m_scheduleAction->setCheckable(true);
+    m_scheduleAction->setShortcut(QKeySequence(Qt::Key_F8));
+    m_scheduleAction->setToolTip(QStringLiteral("스케줄 운영 (F8): 시각에 맞춰 장면을 자동 전환"));
+    connect(m_scheduleAction, &QAction::toggled, this, &MainWindow::setScheduleMode);
 
     m_outputAction = new QAction(icons::output(), QStringLiteral("출력 켜기"), this);
     m_outputAction->setCheckable(true);
@@ -138,8 +172,7 @@ void MainWindow::createActions()
     m_outputAction->setToolTip(QStringLiteral("출력 켜기/끄기 (F6)"));
     connect(m_outputAction, &QAction::toggled, this, &MainWindow::setOutputsEnabled);
 
-    m_testPatternAction =
-        new QAction(icons::testPattern(), QStringLiteral("테스트 패턴"), this);
+    m_testPatternAction = new QAction(icons::testPattern(), QStringLiteral("테스트 패턴"), this);
     m_testPatternAction->setCheckable(true);
     m_testPatternAction->setShortcut(QKeySequence(Qt::Key_F7));
     m_testPatternAction->setToolTip(QStringLiteral("테스트 패턴 (F7): 출력마다 격자, 좌표, 영역 위치 표시"));
@@ -163,6 +196,8 @@ void MainWindow::createActions()
     QMenu* playMenu = menuBar()->addMenu(QStringLiteral("재생"));
     playMenu->addAction(m_playAction);
     playMenu->addAction(m_stopAction);
+    playMenu->addSeparator();
+    playMenu->addAction(m_scheduleAction);
 
     QMenu* outputMenu = menuBar()->addMenu(QStringLiteral("출력"));
     outputMenu->addAction(m_outputAction);
@@ -186,12 +221,15 @@ void MainWindow::createActions()
     toolbar->addSeparator();
     toolbar->addAction(m_playAction);
     toolbar->addAction(m_stopAction);
+    toolbar->addAction(m_scheduleAction);
     toolbar->addSeparator();
     toolbar->addAction(m_outputAction);
     toolbar->addAction(m_testPatternAction);
     toolbar->addSeparator();
     toolbar->addAction(fitAction);
 }
+
+// ---------------------------------------------------------------- 파일
 
 bool MainWindow::maybeSave()
 {
@@ -205,10 +243,18 @@ bool MainWindow::maybeSave()
     return answer == QMessageBox::Discard;
 }
 
+void MainWindow::rememberProject(const QString& path)
+{
+    QSettings settings;
+    settings.setValue(QStringLiteral("lastProject"), QFileInfo(path).absoluteFilePath());
+}
+
 void MainWindow::newProject()
 {
     if (!maybeSave())
         return;
+    setCheckedSilently(m_scheduleAction, false);
+    m_schedule->setActive(false);
     stopPlayback();
     m_controller->newProject();
     if (m_outputs->isRunning())
@@ -230,6 +276,8 @@ void MainWindow::openProject()
 bool MainWindow::openProjectFile(const QString& path)
 {
     QString error;
+    setCheckedSilently(m_scheduleAction, false);
+    m_schedule->setActive(false);
     stopPlayback();
     if (!m_controller->load(path, &error)) {
         logError("프로젝트 열기 실패: " + error.toStdString());
@@ -237,6 +285,7 @@ bool MainWindow::openProjectFile(const QString& path)
         return false;
     }
     logInfo("프로젝트 열기: " + path.toStdString());
+    rememberProject(path);
     if (m_outputs->isRunning())
         restartOutputs();
     return true;
@@ -251,6 +300,7 @@ bool MainWindow::saveProject()
         QMessageBox::warning(this, QStringLiteral("저장 실패"), error);
         return false;
     }
+    rememberProject(m_controller->filePath());
     statusBar()->showMessage(QStringLiteral("저장됨: %1").arg(m_controller->filePath()), 3000);
     updateTitle();
     return true;
@@ -271,34 +321,95 @@ bool MainWindow::saveProjectAs()
         QMessageBox::warning(this, QStringLiteral("저장 실패"), error);
         return false;
     }
+    rememberProject(path);
     statusBar()->showMessage(QStringLiteral("저장됨: %1").arg(path), 3000);
     updateTitle();
     return true;
 }
 
-void MainWindow::play()
+// ---------------------------------------------------------------- 재생
+
+void MainWindow::startScene(const QString& sceneId, bool showDialog)
 {
     std::vector<std::string> errors;
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    m_engine->play(m_controller->project(), errors);
+    m_engine->play(m_controller->project(), sceneId.toStdString(), errors);
     QApplication::restoreOverrideCursor();
-
-    QStringList list;
-    for (const auto& e : errors)
-        list << QString::fromStdString(e);
-    if (!list.isEmpty())
-        reportErrors(QStringLiteral("일부 콘텐츠를 재생할 수 없음"), list);
-
+    if (!errors.empty())
+        reportErrors(QStringLiteral("일부 콘텐츠를 재생할 수 없음"), errors, showDialog);
     if (!m_outputs->isRunning())
-        startOutputs();
+        startOutputs(showDialog);
     updateStatus();
+}
+
+void MainWindow::play()
+{
+    playScene(m_controller->editingSceneId());
+}
+
+void MainWindow::playScene(const QString& sceneId)
+{
+    // 직접 재생하면 스케줄 운영은 끔
+    if (m_schedule->isActive()) {
+        setCheckedSilently(m_scheduleAction, false);
+        m_schedule->setActive(false);
+    }
+    startScene(sceneId, true);
 }
 
 void MainWindow::stopPlayback()
 {
+    if (m_schedule->isActive()) {
+        setCheckedSilently(m_scheduleAction, false);
+        m_schedule->setActive(false);
+    }
     m_engine->stop();
     updateStatus();
 }
+
+void MainWindow::setScheduleMode(bool enabled)
+{
+    if (enabled && m_controller->project().schedule.entries.empty() &&
+        m_controller->project().schedule.outside == OutsideBehavior::Black) {
+        QMessageBox::information(this, QStringLiteral("스케줄 운영"),
+                                 QStringLiteral("등록된 일정이 없습니다. '스케줄' 탭에서 일정을 추가하세요."));
+    }
+    if (enabled && !m_outputs->isRunning())
+        startOutputs();
+    m_schedule->setActive(enabled);
+    updateStatus();
+}
+
+void MainWindow::onScheduledScene(const QString& sceneId)
+{
+    if (sceneId.isEmpty()) {
+        m_engine->stop();
+        updateStatus();
+        return;
+    }
+    if (m_engine->isPlaying() && QString::fromStdString(m_engine->sceneId()) == sceneId)
+        return;
+    // 무인 운영 중에는 대화상자 없이 기록만 남김
+    startScene(sceneId, false);
+}
+
+void MainWindow::startAutomaticallyIfEnabled()
+{
+    const Project& p = m_controller->project();
+    if (!p.autoStart)
+        return;
+    logInfo("자동 실행");
+    startOutputs(false);
+    if (p.schedule.enabled) {
+        setCheckedSilently(m_scheduleAction, true);
+        m_schedule->setActive(true);
+    } else if (!p.scenes.empty()) {
+        startScene(QString::fromStdString(p.scenes.front().id), false);
+    }
+    updateStatus();
+}
+
+// ---------------------------------------------------------------- 출력
 
 void MainWindow::setOutputsEnabled(bool enabled)
 {
@@ -309,16 +420,13 @@ void MainWindow::setOutputsEnabled(bool enabled)
     updateStatus();
 }
 
-void MainWindow::startOutputs()
+void MainWindow::startOutputs(bool showDialog)
 {
     QStringList errors;
     m_outputs->start(m_controller->project(), errors);
     if (!errors.isEmpty())
-        reportErrors(QStringLiteral("일부 출력을 시작할 수 없음"), errors);
-    {
-        const QSignalBlocker blocker(m_outputAction);
-        m_outputAction->setChecked(m_outputs->isRunning());
-    }
+        reportErrors(QStringLiteral("일부 출력을 시작할 수 없음"), errors, showDialog);
+    setCheckedSilently(m_outputAction, m_outputs->isRunning());
     updateStatus();
 }
 
@@ -337,19 +445,23 @@ void MainWindow::setTestPattern(bool enabled)
     updateStatus();
 }
 
+// ---------------------------------------------------------------- 변경 반영
+
 void MainWindow::onRegionsChanged()
+{
+    onPlaybackContentChanged();
+    if (m_outputs->testPatternEnabled())
+        m_outputs->setTestPattern(true, m_controller->project());
+}
+
+void MainWindow::onPlaybackContentChanged()
 {
     if (m_engine->isPlaying()) {
         std::vector<std::string> errors;
         m_engine->update(m_controller->project(), errors);
-        QStringList list;
-        for (const auto& e : errors)
-            list << QString::fromStdString(e);
-        if (!list.isEmpty())
-            reportErrors(QStringLiteral("콘텐츠를 재생할 수 없음"), list);
+        if (!errors.empty())
+            reportErrors(QStringLiteral("콘텐츠를 재생할 수 없음"), errors, !m_schedule->isActive());
     }
-    if (m_outputs->testPatternEnabled())
-        m_outputs->setTestPattern(true, m_controller->project());
     updateStatus();
 }
 
@@ -360,10 +472,20 @@ void MainWindow::onOutputsChanged()
     updateStatus();
 }
 
-void MainWindow::reportErrors(const QString& title, const QStringList& errors)
+void MainWindow::reportErrors(const QString& title, const std::vector<std::string>& errors, bool showDialog)
+{
+    QStringList list;
+    for (const auto& e : errors)
+        list << QString::fromStdString(e);
+    reportErrors(title, list, showDialog);
+}
+
+void MainWindow::reportErrors(const QString& title, const QStringList& errors, bool showDialog)
 {
     for (const QString& e : errors)
         logError(e.toStdString());
+    if (!showDialog)
+        return;
     QStringList shown = errors.mid(0, kMaxErrorsInDialog);
     if (errors.size() > kMaxErrorsInDialog)
         shown << QStringLiteral("... 외 %1건 (아래 기록 창 참고)").arg(errors.size() - kMaxErrorsInDialog);
@@ -380,12 +502,22 @@ void MainWindow::updateTitle()
 void MainWindow::updateStatus()
 {
     const Project& p = m_controller->project();
-    const QString playState = m_engine->isPlaying() ? QStringLiteral("▶ 재생 중") : QStringLiteral("■ 정지");
+    QString playState = QStringLiteral("■ 정지");
+    QString playingScene;
+    if (m_engine->isPlaying()) {
+        playingScene = QString::fromStdString(m_engine->sceneId());
+        const Scene* scene = p.findScene(playingScene.toStdString());
+        playState = QStringLiteral("▶ %1").arg(scene ? QString::fromStdString(scene->name) : QStringLiteral("재생 중"));
+    }
+    m_scenePanel->setPlayingScene(playingScene);
+
+    const QString scheduleState =
+        m_schedule->isActive() ? QStringLiteral("   |   ⏰ %1").arg(m_schedule->statusText()) : QString();
     const QString outputState = m_outputs->isRunning()
                                     ? QStringLiteral("출력 %1개 동작").arg(m_outputs->runningCount())
                                     : QStringLiteral("출력 꺼짐");
-    m_statusLabel->setText(QStringLiteral("%1   |   %2%3   |   캔버스 %4 × %5")
-                               .arg(playState, outputState,
+    m_statusLabel->setText(QStringLiteral("%1%2   |   %3%4   |   캔버스 %5 × %6")
+                               .arg(playState, scheduleState, outputState,
                                     m_outputs->testPatternEnabled() ? QStringLiteral(" (테스트 패턴)") : QString())
                                .arg(p.canvas.width)
                                .arg(p.canvas.height));
@@ -397,6 +529,7 @@ void MainWindow::closeEvent(QCloseEvent* event)
         event->ignore();
         return;
     }
+    m_schedule->setActive(false);
     m_outputs->stop();
     m_engine->stop();
     event->accept();

@@ -27,6 +27,15 @@ public:
     virtual void stop() = 0;
 
     virtual const std::string& path() const = 0;
+
+    // 정지 이미지 여부
+    virtual bool isStill() const { return false; }
+
+    // 파일 정보상의 재생 길이(초). 모르면 음수
+    virtual double durationHint() const { return -1.0; }
+
+    // 반복 없이 끝까지 재생했을 때 실제 끝난 시각(초). 아직 끝나지 않았으면 음수
+    virtual double endTime() const { return -1.0; }
 };
 
 } // namespace led

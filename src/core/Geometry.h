@@ -45,4 +45,7 @@ Placement computePlacement(const RectI& region, int contentWidth, int contentHei
 
 bool intersects(const RectF& a, const RectF& b);
 
+// dst를 clip 범위로 자르고 uv도 같은 비율로 줄임. 남는 부분이 없으면 false
+bool clipPlacement(RectF& dst, RectF& uv, const RectF& clip);
+
 } // namespace led

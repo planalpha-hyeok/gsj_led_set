@@ -151,4 +151,15 @@ QIcon fit()
     });
 }
 
+QIcon schedule()
+{
+    return make([](QPainter& p, const QColor& c) {
+        const QColor accent = c == kDisabled ? kDisabled : QColor(242, 184, 56);
+        p.setPen(pen(accent));
+        p.drawEllipse(QPointF(12, 12), 8.5, 8.5);
+        p.drawLine(QPointF(12, 12), QPointF(12, 7));
+        p.drawLine(QPointF(12, 12), QPointF(15.5, 14));
+    });
+}
+
 } // namespace led::icons

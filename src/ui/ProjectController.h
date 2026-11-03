@@ -39,6 +39,25 @@ public:
     // 캔버스
     void setCanvasSize(int width, int height);
 
+    // 장면
+    QString editingSceneId() const { return m_editingScene; }
+    const Scene* editingScene() const;
+    void setEditingScene(const QString& id);
+    QString addScene();
+    QString duplicateScene(const QString& id);
+    void renameScene(const QString& id, const QString& name);
+    bool removeScene(const QString& id); // 마지막 장면은 삭제 불가
+    void moveScene(const QString& id, int delta);
+
+    // 영역 콘텐츠 (편집 중인 장면 기준)
+    const RegionContent* contentFor(const QString& sceneId, const QString& regionId) const;
+    void setContent(const QString& sceneId, const RegionContent& content);
+
+    // 스케줄 / 운영
+    void setSchedule(const Schedule& schedule);
+    void setScheduleEnabled(bool enabled);
+    void setAutoStart(bool enabled);
+
 signals:
     void projectReset();
     void regionsChanged();
@@ -46,6 +65,10 @@ signals:
     void canvasChanged();
     void dirtyChanged(bool dirty);
     void regionSelected(const QString& id);
+    void scenesChanged();
+    void editingSceneChanged(const QString& id);
+    void contentChanged(const QString& sceneId, const QString& regionId);
+    void scheduleChanged();
 
 private:
     void setDirty(bool dirty);
@@ -53,6 +76,7 @@ private:
     Project m_project;
     QString m_filePath;
     QString m_selectedRegion;
+    QString m_editingScene;
     bool m_dirty = false;
 };
 

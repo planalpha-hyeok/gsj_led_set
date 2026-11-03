@@ -15,6 +15,12 @@ namespace {
 QString qs(const std::string& s) { return QString::fromStdString(s); }
 std::string ss(const QString& s) { return s.toStdString(); }
 
+void setError(QString* error, const QString& msg)
+{
+    if (error)
+        *error = msg;
+}
+
 QJsonObject rectToJson(const RectI& r)
 {
     QJsonObject o;
@@ -27,21 +33,181 @@ QJsonObject rectToJson(const RectI& r)
 
 RectI rectFromJson(const QJsonObject& o)
 {
-    RectI r;
-    r.x = o.value("x").toInt(0);
-    r.y = o.value("y").toInt(0);
-    r.w = o.value("width").toInt(0);
-    r.h = o.value("height").toInt(0);
-    return r;
+    return RectI{o.value("x").toInt(0), o.value("y").toInt(0), o.value("width").toInt(0), o.value("height").toInt(0)};
 }
 
-void setError(QString* error, const QString& msg)
+std::uint32_t colorValue(const QJsonObject& o, const char* key, std::uint32_t fallback)
 {
-    if (error)
-        *error = msg;
+    std::uint32_t c = fallback;
+    if (!colorFromString(ss(o.value(key).toString()), c))
+        return fallback;
+    return c;
+}
+
+// ---------------------------------------------------------------- 저장
+
+QJsonObject tickerToJson(const TickerConfig& t)
+{
+    QJsonObject o;
+    QJsonArray lines;
+    for (const auto& l : t.lines)
+        lines.append(qs(l));
+    o["lines"] = lines;
+    o["textFile"] = qs(t.textFile);
+    o["fontFamily"] = qs(t.fontFamily);
+    o["fontSize"] = t.fontSize;
+    o["bold"] = t.bold;
+    o["textColor"] = qs(colorToString(t.textColor));
+    o["backgroundColor"] = qs(colorToString(t.backgroundColor));
+    o["outlineWidth"] = t.outlineWidth;
+    o["outlineColor"] = qs(colorToString(t.outlineColor));
+    o["shadow"] = t.shadow;
+    o["shadowOffset"] = t.shadowOffset;
+    o["shadowColor"] = qs(colorToString(t.shadowColor));
+    o["speed"] = t.speed;
+    o["direction"] = QString::fromLatin1(tickerDirectionKey(t.direction));
+    o["gap"] = t.gap;
+    return o;
+}
+
+QJsonObject contentToJson(const RegionContent& c)
+{
+    QJsonObject o;
+    o["regionId"] = qs(c.regionId);
+    o["kind"] = c.kind == ContentKind::Ticker ? QStringLiteral("ticker") : QStringLiteral("playlist");
+    o["loop"] = c.loopPlaylist;
+    QJsonArray items;
+    for (const auto& it : c.items) {
+        QJsonObject i;
+        i["id"] = qs(it.id);
+        i["source"] = qs(it.source);
+        i["duration"] = it.duration;
+        i["transition"] = QString::fromLatin1(transitionKey(it.transition));
+        i["transitionDuration"] = it.transitionDuration;
+        items.append(i);
+    }
+    o["items"] = items;
+    o["ticker"] = tickerToJson(c.ticker);
+    return o;
+}
+
+// ---------------------------------------------------------------- 불러오기
+
+TickerConfig tickerFromJson(const QJsonObject& o)
+{
+    TickerConfig t;
+    t.lines.clear();
+    for (const QJsonValue& v : o.value("lines").toArray())
+        t.lines.push_back(ss(v.toString()));
+    t.textFile = ss(o.value("textFile").toString());
+    t.fontFamily = ss(o.value("fontFamily").toString(qs(t.fontFamily)));
+    t.fontSize = std::clamp(o.value("fontSize").toInt(t.fontSize), 4, 4000);
+    t.bold = o.value("bold").toBool(t.bold);
+    t.textColor = colorValue(o, "textColor", t.textColor);
+    t.backgroundColor = colorValue(o, "backgroundColor", t.backgroundColor);
+    t.outlineWidth = std::clamp(o.value("outlineWidth").toInt(t.outlineWidth), 0, 200);
+    t.outlineColor = colorValue(o, "outlineColor", t.outlineColor);
+    t.shadow = o.value("shadow").toBool(t.shadow);
+    t.shadowOffset = std::clamp(o.value("shadowOffset").toInt(t.shadowOffset), 0, 200);
+    t.shadowColor = colorValue(o, "shadowColor", t.shadowColor);
+    t.speed = std::clamp(o.value("speed").toDouble(t.speed), 1.0, 10000.0);
+    TickerDirection dir;
+    if (tickerDirectionFromKey(ss(o.value("direction").toString()), dir))
+        t.direction = dir;
+    t.gap = std::clamp(o.value("gap").toInt(t.gap), 0, 100000);
+    return t;
+}
+
+RegionContent contentFromJson(const QJsonObject& o)
+{
+    RegionContent c;
+    c.regionId = ss(o.value("regionId").toString());
+    c.kind = o.value("kind").toString() == QLatin1String("ticker") ? ContentKind::Ticker : ContentKind::Playlist;
+    c.loopPlaylist = o.value("loop").toBool(true);
+    for (const QJsonValue& v : o.value("items").toArray()) {
+        const QJsonObject i = v.toObject();
+        PlaylistItem item;
+        item.id = ss(i.value("id").toString());
+        if (item.id.empty())
+            item.id = generateId();
+        item.source = ss(i.value("source").toString());
+        item.duration = std::max(0.0, i.value("duration").toDouble(0.0));
+        TransitionType t;
+        if (transitionFromKey(ss(i.value("transition").toString()), t))
+            item.transition = t;
+        item.transitionDuration = std::clamp(i.value("transitionDuration").toDouble(1.0), 0.0, 30.0);
+        c.items.push_back(std::move(item));
+    }
+    c.ticker = tickerFromJson(o.value("ticker").toObject());
+    return c;
+}
+
+bool readRegions(const QJsonObject& root, Project& p, int version, QString* error)
+{
+    Scene migrated; // 버전 1의 영역별 콘텐츠를 담을 장면
+    migrated.id = generateId();
+    migrated.name = "기본 장면";
+
+    for (const QJsonValue& v : root.value("regions").toArray()) {
+        const QJsonObject o = v.toObject();
+        Region r;
+        r.id = ss(o.value("id").toString());
+        if (r.id.empty())
+            r.id = generateId();
+        r.name = ss(o.value("name").toString());
+        r.rect = rectFromJson(o);
+        if (!fitModeFromKey(ss(o.value("fit").toString("stretch")), r.fit))
+            r.fit = FitMode::Stretch;
+        r.opacity = std::clamp(o.value("opacity").toDouble(1.0), 0.0, 1.0);
+        r.visible = o.value("visible").toBool(true);
+        if (r.rect.w < 1 || r.rect.h < 1) {
+            setError(error, QStringLiteral("영역 '%1'의 크기가 잘못됨").arg(qs(r.name)));
+            return false;
+        }
+
+        if (version == 1) {
+            const std::string source = ss(o.value("source").toString());
+            if (!source.empty()) {
+                RegionContent c;
+                c.regionId = r.id;
+                c.loopPlaylist = o.value("loop").toBool(true);
+                PlaylistItem item;
+                item.id = generateId();
+                item.source = source;
+                c.items.push_back(item);
+                migrated.contents.push_back(std::move(c));
+            }
+        }
+        p.regions.push_back(std::move(r));
+    }
+
+    if (version == 1)
+        p.scenes.push_back(std::move(migrated));
+    return true;
 }
 
 } // namespace
+
+void normalizeProject(Project& p)
+{
+    if (p.scenes.empty()) {
+        Scene s;
+        s.id = generateId();
+        s.name = "기본 장면";
+        p.scenes.push_back(std::move(s));
+    }
+    for (Scene& s : p.scenes) {
+        if (s.id.empty())
+            s.id = generateId();
+        auto& c = s.contents;
+        c.erase(std::remove_if(c.begin(), c.end(),
+                               [&](const RegionContent& rc) { return !p.findRegion(rc.regionId); }),
+                c.end());
+    }
+    for (ScheduleEntry& e : p.schedule.entries)
+        if (e.id.empty())
+            e.id = generateId();
+}
 
 QByteArray projectToJson(const Project& project)
 {
@@ -58,14 +224,46 @@ QByteArray projectToJson(const Project& project)
         QJsonObject o = rectToJson(r.rect);
         o["id"] = qs(r.id);
         o["name"] = qs(r.name);
-        o["source"] = qs(r.source);
         o["fit"] = QString::fromLatin1(fitModeKey(r.fit));
-        o["loop"] = r.loop;
         o["opacity"] = r.opacity;
         o["visible"] = r.visible;
         regions.append(o);
     }
     root["regions"] = regions;
+
+    QJsonArray scenes;
+    for (const auto& s : project.scenes) {
+        QJsonObject o;
+        o["id"] = qs(s.id);
+        o["name"] = qs(s.name);
+        QJsonArray contents;
+        for (const auto& c : s.contents)
+            contents.append(contentToJson(c));
+        o["contents"] = contents;
+        scenes.append(o);
+    }
+    root["scenes"] = scenes;
+
+    QJsonObject schedule;
+    schedule["enabled"] = project.schedule.enabled;
+    schedule["outside"] = project.schedule.outside == OutsideBehavior::DefaultScene ? QStringLiteral("defaultScene")
+                                                                                     : QStringLiteral("black");
+    schedule["defaultSceneId"] = qs(project.schedule.defaultSceneId);
+    QJsonArray entries;
+    for (const auto& e : project.schedule.entries) {
+        QJsonObject o;
+        o["id"] = qs(e.id);
+        o["name"] = qs(e.name);
+        o["sceneId"] = qs(e.sceneId);
+        o["enabled"] = e.enabled;
+        o["weekdays"] = static_cast<int>(e.weekdays);
+        o["date"] = qs(e.date);
+        o["start"] = qs(minuteToString(e.startMinute));
+        o["end"] = qs(minuteToString(e.endMinute));
+        entries.append(o);
+    }
+    schedule["entries"] = entries;
+    root["schedule"] = schedule;
 
     QJsonArray outputs;
     for (const auto& out : project.outputs) {
@@ -80,6 +278,7 @@ QByteArray projectToJson(const Project& project)
         outputs.append(o);
     }
     root["outputs"] = outputs;
+    root["autoStart"] = project.autoStart;
 
     return QJsonDocument(root).toJson(QJsonDocument::Indented);
 }
@@ -103,7 +302,6 @@ bool projectFromJson(const QByteArray& json, Project& out, QString* error)
     }
 
     Project p;
-
     const QJsonObject canvas = root.value("canvas").toObject();
     p.canvas.width = canvas.value("width").toInt(0);
     p.canvas.height = canvas.value("height").toInt(0);
@@ -113,25 +311,43 @@ bool projectFromJson(const QByteArray& json, Project& out, QString* error)
         return false;
     }
 
-    for (const QJsonValue& v : root.value("regions").toArray()) {
-        const QJsonObject o = v.toObject();
-        Region r;
-        r.id = ss(o.value("id").toString());
-        if (r.id.empty())
-            r.id = generateId();
-        r.name = ss(o.value("name").toString());
-        r.rect = rectFromJson(o);
-        r.source = ss(o.value("source").toString());
-        if (!fitModeFromKey(ss(o.value("fit").toString("stretch")), r.fit))
-            r.fit = FitMode::Stretch;
-        r.loop = o.value("loop").toBool(true);
-        r.opacity = std::clamp(o.value("opacity").toDouble(1.0), 0.0, 1.0);
-        r.visible = o.value("visible").toBool(true);
-        if (r.rect.w < 1 || r.rect.h < 1) {
-            setError(error, QStringLiteral("영역 '%1'의 크기가 잘못됨").arg(qs(r.name)));
-            return false;
+    if (!readRegions(root, p, version, error))
+        return false;
+
+    if (version >= 2) {
+        for (const QJsonValue& v : root.value("scenes").toArray()) {
+            const QJsonObject o = v.toObject();
+            Scene s;
+            s.id = ss(o.value("id").toString());
+            s.name = ss(o.value("name").toString());
+            for (const QJsonValue& c : o.value("contents").toArray())
+                s.contents.push_back(contentFromJson(c.toObject()));
+            p.scenes.push_back(std::move(s));
         }
-        p.regions.push_back(std::move(r));
+
+        const QJsonObject schedule = root.value("schedule").toObject();
+        p.schedule.enabled = schedule.value("enabled").toBool(false);
+        p.schedule.outside = schedule.value("outside").toString() == QLatin1String("defaultScene")
+                                 ? OutsideBehavior::DefaultScene
+                                 : OutsideBehavior::Black;
+        p.schedule.defaultSceneId = ss(schedule.value("defaultSceneId").toString());
+        for (const QJsonValue& v : schedule.value("entries").toArray()) {
+            const QJsonObject o = v.toObject();
+            ScheduleEntry e;
+            e.id = ss(o.value("id").toString());
+            e.name = ss(o.value("name").toString());
+            e.sceneId = ss(o.value("sceneId").toString());
+            e.enabled = o.value("enabled").toBool(true);
+            e.weekdays = static_cast<std::uint8_t>(o.value("weekdays").toInt(0x7F) & 0x7F);
+            e.date = ss(o.value("date").toString());
+            if (!minuteFromString(ss(o.value("start").toString()), e.startMinute) ||
+                !minuteFromString(ss(o.value("end").toString()), e.endMinute)) {
+                setError(error, QStringLiteral("일정 '%1'의 시각 형식이 잘못됨 (HH:MM)").arg(qs(e.name)));
+                return false;
+            }
+            p.schedule.entries.push_back(std::move(e));
+        }
+        p.autoStart = root.value("autoStart").toBool(false);
     }
 
     for (const QJsonValue& v : root.value("outputs").toArray()) {
@@ -153,6 +369,7 @@ bool projectFromJson(const QByteArray& json, Project& out, QString* error)
         p.outputs.push_back(std::move(oc));
     }
 
+    normalizeProject(p);
     out = std::move(p);
     return true;
 }

@@ -7,37 +7,81 @@
 
 namespace led {
 
-Region* Project::findRegion(const std::string& id)
+// ---------------------------------------------------------------- 비교
+
+bool PlaylistItem::operator==(const PlaylistItem& o) const
 {
-    for (auto& r : regions)
-        if (r.id == id)
-            return &r;
+    return id == o.id && source == o.source && duration == o.duration && transition == o.transition &&
+           transitionDuration == o.transitionDuration;
+}
+
+bool TickerConfig::operator==(const TickerConfig& o) const
+{
+    return lines == o.lines && textFile == o.textFile && fontFamily == o.fontFamily && fontSize == o.fontSize &&
+           bold == o.bold && textColor == o.textColor && backgroundColor == o.backgroundColor &&
+           outlineWidth == o.outlineWidth && outlineColor == o.outlineColor && shadow == o.shadow &&
+           shadowOffset == o.shadowOffset && shadowColor == o.shadowColor && speed == o.speed &&
+           direction == o.direction && gap == o.gap;
+}
+
+bool RegionContent::isEmpty() const
+{
+    if (kind == ContentKind::Playlist)
+        return items.empty();
+    return ticker.lines.empty() && ticker.textFile.empty();
+}
+
+bool RegionContent::operator==(const RegionContent& o) const
+{
+    return regionId == o.regionId && kind == o.kind && items == o.items && loopPlaylist == o.loopPlaylist &&
+           ticker == o.ticker;
+}
+
+// ---------------------------------------------------------------- 검색
+
+RegionContent* Scene::contentFor(const std::string& regionId)
+{
+    for (auto& c : contents)
+        if (c.regionId == regionId)
+            return &c;
     return nullptr;
 }
 
-const Region* Project::findRegion(const std::string& id) const
+const RegionContent* Scene::contentFor(const std::string& regionId) const
 {
-    for (const auto& r : regions)
-        if (r.id == id)
-            return &r;
+    for (const auto& c : contents)
+        if (c.regionId == regionId)
+            return &c;
     return nullptr;
 }
 
-OutputConfig* Project::findOutput(const std::string& id)
+namespace {
+template <typename T>
+T* findById(std::vector<T>& list, const std::string& id)
 {
-    for (auto& o : outputs)
-        if (o.id == id)
-            return &o;
+    for (auto& v : list)
+        if (v.id == id)
+            return &v;
     return nullptr;
 }
+template <typename T>
+const T* findById(const std::vector<T>& list, const std::string& id)
+{
+    for (const auto& v : list)
+        if (v.id == id)
+            return &v;
+    return nullptr;
+}
+} // namespace
 
-const OutputConfig* Project::findOutput(const std::string& id) const
-{
-    for (const auto& o : outputs)
-        if (o.id == id)
-            return &o;
-    return nullptr;
-}
+Region* Project::findRegion(const std::string& id) { return findById(regions, id); }
+const Region* Project::findRegion(const std::string& id) const { return findById(regions, id); }
+OutputConfig* Project::findOutput(const std::string& id) { return findById(outputs, id); }
+const OutputConfig* Project::findOutput(const std::string& id) const { return findById(outputs, id); }
+Scene* Project::findScene(const std::string& id) { return findById(scenes, id); }
+const Scene* Project::findScene(const std::string& id) const { return findById(scenes, id); }
+
+// ---------------------------------------------------------------- ID
 
 std::string generateId()
 {
@@ -55,6 +99,8 @@ std::string generateId()
     std::snprintf(buf, sizeof(buf), "%016llx", value);
     return std::string(buf);
 }
+
+// ---------------------------------------------------------------- 문자열 변환
 
 const char* fitModeKey(FitMode mode)
 {
@@ -74,6 +120,90 @@ bool fitModeFromKey(const std::string& key, FitMode& out)
     if (key == "fill") { out = FitMode::Fill; return true; }
     if (key == "original") { out = FitMode::Original; return true; }
     return false;
+}
+
+const char* transitionKey(TransitionType t)
+{
+    return t == TransitionType::Fade ? "fade" : "cut";
+}
+
+bool transitionFromKey(const std::string& key, TransitionType& out)
+{
+    if (key == "cut") { out = TransitionType::Cut; return true; }
+    if (key == "fade") { out = TransitionType::Fade; return true; }
+    return false;
+}
+
+const char* tickerDirectionKey(TickerDirection d)
+{
+    switch (d) {
+    case TickerDirection::Left: return "left";
+    case TickerDirection::Right: return "right";
+    case TickerDirection::Up: return "up";
+    case TickerDirection::Down: return "down";
+    }
+    return "left";
+}
+
+bool tickerDirectionFromKey(const std::string& key, TickerDirection& out)
+{
+    if (key == "left") { out = TickerDirection::Left; return true; }
+    if (key == "right") { out = TickerDirection::Right; return true; }
+    if (key == "up") { out = TickerDirection::Up; return true; }
+    if (key == "down") { out = TickerDirection::Down; return true; }
+    return false;
+}
+
+std::string colorToString(std::uint32_t argb)
+{
+    char buf[10];
+    std::snprintf(buf, sizeof(buf), "#%08X", static_cast<unsigned>(argb));
+    return buf;
+}
+
+bool colorFromString(const std::string& text, std::uint32_t& out)
+{
+    if (text.size() != 7 && text.size() != 9)
+        return false;
+    if (text[0] != '#')
+        return false;
+    std::uint32_t value = 0;
+    for (std::size_t i = 1; i < text.size(); ++i) {
+        const char c = text[i];
+        int digit;
+        if (c >= '0' && c <= '9') digit = c - '0';
+        else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
+        else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
+        else return false;
+        value = (value << 4) | static_cast<std::uint32_t>(digit);
+    }
+    if (text.size() == 7)
+        value |= 0xFF000000u; // #RRGGBB = 불투명
+    out = value;
+    return true;
+}
+
+std::string minuteToString(int minute)
+{
+    if (minute < 0)
+        minute = 0;
+    minute %= 1440;
+    char buf[6];
+    std::snprintf(buf, sizeof(buf), "%02d:%02d", minute / 60, minute % 60);
+    return buf;
+}
+
+bool minuteFromString(const std::string& text, int& out)
+{
+    int h = 0;
+    int m = 0;
+    char extra = 0;
+    if (std::sscanf(text.c_str(), "%d:%d%c", &h, &m, &extra) != 2)
+        return false;
+    if (h < 0 || h > 23 || m < 0 || m > 59)
+        return false;
+    out = h * 60 + m;
+    return true;
 }
 
 } // namespace led

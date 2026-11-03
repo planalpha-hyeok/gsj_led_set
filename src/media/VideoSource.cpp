@@ -90,6 +90,7 @@ struct VideoSource::Impl {
     double timeBase = 0.0;
     int64_t streamStart = 0;
     double defaultFrameDuration = 1.0 / 30.0;
+    double durationHint = -1.0;
 
     SwsContext* configuredSws = nullptr;
     int configuredColorspace = -1;
@@ -103,6 +104,7 @@ struct VideoSource::Impl {
     std::deque<Queued> queue;
     std::shared_ptr<const Frame> current;
     bool finished = false;
+    double endTime = -1.0;   // 반복 없이 끝났을 때 마지막 프레임이 끝나는 시각
 
     ~Impl()
     {
@@ -165,6 +167,11 @@ struct VideoSource::Impl {
 
         timeBase = av_q2d(stream->time_base);
         streamStart = stream->start_time != AV_NOPTS_VALUE ? stream->start_time : 0;
+        if (stream->duration != AV_NOPTS_VALUE && stream->duration > 0)
+            durationHint = stream->duration * timeBase;
+        else if (format->duration != AV_NOPTS_VALUE && format->duration > 0)
+            durationHint = static_cast<double>(format->duration) / AV_TIME_BASE;
+
         const AVRational rate = av_guess_frame_rate(format, stream, nullptr);
         if (rate.num > 0 && rate.den > 0)
             defaultFrameDuration = double(rate.den) / double(rate.num);
@@ -247,6 +254,10 @@ struct VideoSource::Impl {
             logError("영상 디코딩 메모리 할당 실패: " + path);
             av_packet_free(&packet);
             av_frame_free(&frame);
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                endTime = 0.0;
+            }
             markFinished();
             return;
         }
@@ -287,6 +298,8 @@ struct VideoSource::Impl {
                         logWarning("영상 끝 처리 중 오류: " + path + " (" + ffmpegError(r) + ")");
                     if (!loop || framesThisLoop == 0 || !rewind()) {
                         done = true;
+                        std::lock_guard<std::mutex> lock(mutex);
+                        endTime = lastEnd;
                     } else {
                         loopOffset = lastEnd;
                         framesThisLoop = 0;
@@ -330,6 +343,12 @@ struct VideoSource::Impl {
 
         av_packet_free(&packet);
         av_frame_free(&frame);
+        if (!stopRequested) {
+            // 오류로 중단된 경우에도 끝난 시각을 알려 플레이리스트가 다음 항목으로 넘어가게 함
+            std::lock_guard<std::mutex> lock(mutex);
+            if (endTime < 0.0)
+                endTime = lastEnd;
+        }
         markFinished();
     }
 
@@ -396,6 +415,17 @@ void VideoSource::stop()
 const std::string& VideoSource::path() const
 {
     return d->path;
+}
+
+double VideoSource::durationHint() const
+{
+    return d->durationHint;
+}
+
+double VideoSource::endTime() const
+{
+    std::lock_guard<std::mutex> lock(d->mutex);
+    return d->endTime;
 }
 
 } // namespace led

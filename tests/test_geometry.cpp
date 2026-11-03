@@ -1,8 +1,9 @@
-// 맞춤 방식 계산과 출력 좌표 변환 검사
+// 맞춤 방식 계산, 출력 좌표 변환, 자르기, 자막 위치 계산 검사
 
 #include "TestUtil.h"
 
 #include "core/Geometry.h"
+#include "core/TickerMotion.h"
 #include "render/Scene.h"
 
 using namespace led;
@@ -18,7 +19,6 @@ static void testStretch()
 
 static void testFit()
 {
-    // 1000x500 영역에 1000x1000 콘텐츠 -> 500x500, 가로 가운데
     const Placement p = computePlacement(RectI{0, 0, 1000, 500}, 1000, 1000, FitMode::Fit);
     CHECK(near(p.dst.w, 500) && near(p.dst.h, 500));
     CHECK(near(p.dst.x, 250) && near(p.dst.y, 0));
@@ -27,7 +27,6 @@ static void testFit()
 
 static void testFill()
 {
-    // 1000x500 영역에 1000x1000 콘텐츠 -> 위아래 25%씩 잘림
     const Placement p = computePlacement(RectI{10, 20, 1000, 500}, 1000, 1000, FitMode::Fill);
     CHECK(near(p.dst.x, 10) && near(p.dst.y, 20) && near(p.dst.w, 1000) && near(p.dst.h, 500));
     CHECK(near(p.uv.x, 0) && near(p.uv.y, 0.25) && near(p.uv.w, 1) && near(p.uv.h, 0.5));
@@ -35,12 +34,10 @@ static void testFill()
 
 static void testOriginal()
 {
-    // 콘텐츠가 영역보다 큼 -> 좌상단부터 영역 크기만큼
     Placement p = computePlacement(RectI{0, 0, 960, 540}, 1920, 1080, FitMode::Original);
     CHECK(near(p.dst.w, 960) && near(p.dst.h, 540));
     CHECK(near(p.uv.x, 0) && near(p.uv.y, 0) && near(p.uv.w, 0.5) && near(p.uv.h, 0.5));
 
-    // 콘텐츠가 영역보다 작음 -> 원본 크기 그대로
     p = computePlacement(RectI{100, 100, 1920, 1080}, 640, 360, FitMode::Original);
     CHECK(near(p.dst.x, 100) && near(p.dst.y, 100) && near(p.dst.w, 640) && near(p.dst.h, 360));
     CHECK(near(p.uv.w, 1) && near(p.uv.h, 1));
@@ -52,19 +49,78 @@ static void testInvalid()
     CHECK(!computePlacement(RectI{0, 0, 100, 100}, 0, 100, FitMode::Fit).visible);
 }
 
+static void testClip()
+{
+    // 1000px 띠 중 영역(100~600)에 걸친 부분만 남김
+    RectF dst{-200, 0, 1000, 50};
+    RectF uv{0, 0, 1, 1};
+    CHECK(clipPlacement(dst, uv, RectF{100, 0, 500, 50}));
+    CHECK(near(dst.x, 100) && near(dst.w, 500) && near(dst.y, 0) && near(dst.h, 50));
+    CHECK(near(uv.x, 0.3) && near(uv.w, 0.5) && near(uv.y, 0) && near(uv.h, 1));
+
+    // 겹치지 않음
+    RectF d2{0, 0, 10, 10};
+    RectF u2{0, 0, 1, 1};
+    CHECK(!clipPlacement(d2, u2, RectF{10, 0, 10, 10}));
+
+    // uv가 이미 일부인 경우에도 비율 유지
+    RectF d3{0, 0, 100, 100};
+    RectF u3{0.5, 0.5, 0.5, 0.5};
+    CHECK(clipPlacement(d3, u3, RectF{50, 0, 100, 50}));
+    CHECK(near(u3.x, 0.75) && near(u3.w, 0.25) && near(u3.y, 0.5) && near(u3.h, 0.25));
+}
+
+static void testTickerPositions()
+{
+    std::vector<double> pos;
+
+    // 시작 직후: 아무것도 안 보임
+    tickerCopyPositions(0, 0, 1000, 300, TickerDirection::Left, pos);
+    CHECK(pos.empty());
+
+    // 100px 이동: 첫 사본이 오른쪽 끝에서 들어옴 (시작 위치 900)
+    tickerCopyPositions(100, 0, 1000, 300, TickerDirection::Left, pos);
+    CHECK(pos.size() == 1 && near(pos[0], 900));
+
+    // 700px 이동: 사본 0(300), 1(600), 2(900)
+    tickerCopyPositions(700, 0, 1000, 300, TickerDirection::Left, pos);
+    CHECK(pos.size() == 3);
+    if (pos.size() == 3)
+        CHECK(near(pos[0], 300) && near(pos[1], 600) && near(pos[2], 900));
+
+    // 오래 흐른 뒤에도 보이는 사본만 (영역 1000 / 띠 300 -> 최대 5개)
+    tickerCopyPositions(1000000, 0, 1000, 300, TickerDirection::Left, pos);
+    CHECK(!pos.empty() && pos.size() <= 5);
+    for (double p : pos)
+        CHECK(p < 1000 && p + 300 > 0);
+
+    // 오른쪽으로: 왼쪽 끝에서 들어옴
+    tickerCopyPositions(100, 50, 1000, 300, TickerDirection::Right, pos);
+    CHECK(pos.size() == 1 && near(pos[0], 50 - 300 + 100));
+
+    // 위로: 세로 축 동일 규칙
+    tickerCopyPositions(100, 0, 200, 80, TickerDirection::Up, pos);
+    CHECK(pos.size() == 2);
+    if (pos.size() == 2)
+        CHECK(near(pos[0], 100) && near(pos[1], 180));
+
+    // 잘못된 값
+    tickerCopyPositions(100, 0, 1000, 0, TickerDirection::Left, pos);
+    CHECK(pos.empty());
+}
+
 static void testDrawItems()
 {
-    // 캔버스 3840x1080, 출력2 = 오른쪽 절반
     auto frame = std::make_shared<Frame>();
     frame->width = 16;
     frame->height = 16;
 
     std::vector<SceneLayer> layers(3);
-    layers[0].key = 1; // 왼쪽 절반에만 있음 -> 제외
+    layers[0].key = 1;
     layers[0].dst = RectF{0, 0, 1920, 1080};
-    layers[1].key = 2; // 두 출력에 걸침
+    layers[1].key = 2;
     layers[1].dst = RectF{1000, 100, 2000, 500};
-    layers[2].key = 3; // 투명도 0 -> 제외
+    layers[2].key = 3;
     layers[2].dst = RectF{2000, 0, 100, 100};
     layers[2].opacity = 0.0f;
     for (auto& l : layers) {
@@ -81,7 +137,6 @@ static void testDrawItems()
         CHECK(near(items[0].dst.w, 2000) && near(items[0].dst.h, 500));
     }
 
-    // 경계에 딱 붙은 레이어(겹치지 않음)는 제외
     std::vector<SceneLayer> edge(1);
     edge[0].dst = RectF{0, 0, 1920, 1080};
     edge[0].frame = frame;
@@ -96,6 +151,8 @@ int main()
     testFill();
     testOriginal();
     testInvalid();
+    testClip();
+    testTickerPositions();
     testDrawItems();
     return test::finish("test_geometry");
 }
