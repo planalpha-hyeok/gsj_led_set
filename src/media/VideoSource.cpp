@@ -6,6 +6,7 @@ extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavutil/avutil.h>
+#include <libavutil/hwcontext.h>
 #include <libavutil/pixdesc.h>
 #include <libswscale/swscale.h>
 }
@@ -15,6 +16,7 @@ extern "C" {
 #include <chrono>
 #include <condition_variable>
 #include <deque>
+#include <map>
 #include <mutex>
 #include <thread>
 
@@ -63,6 +65,44 @@ int swsColorspace(AVColorSpace cs, int height)
     }
 }
 
+// 하드웨어 디코딩 장치 후보 (앞쪽 우선)
+const AVHWDeviceType kHardwareTypes[] = {
+#if defined(_WIN32)
+    AV_HWDEVICE_TYPE_D3D11VA,
+    AV_HWDEVICE_TYPE_DXVA2,
+#elif defined(__APPLE__)
+    AV_HWDEVICE_TYPE_VIDEOTOOLBOX,
+#else
+    AV_HWDEVICE_TYPE_VAAPI,
+    AV_HWDEVICE_TYPE_VDPAU,
+#endif
+};
+
+// 하드웨어 장치는 종류별로 1개만 만들어 모든 영상이 함께 사용 (프로그램 종료 시까지 유지)
+AVBufferRef* sharedHardwareDevice(AVHWDeviceType type)
+{
+    static std::mutex mutex;
+    static std::map<AVHWDeviceType, AVBufferRef*> devices;
+    static std::map<AVHWDeviceType, bool> failed;
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = devices.find(type);
+    if (it != devices.end())
+        return it->second;
+    if (failed[type])
+        return nullptr;
+    AVBufferRef* device = nullptr;
+    const int r = av_hwdevice_ctx_create(&device, type, nullptr, nullptr, 0);
+    if (r < 0) {
+        failed[type] = true;
+        logInfo(std::string("하드웨어 디코딩 장치 사용 불가: ") + av_hwdevice_get_type_name(type) + " (" +
+                ffmpegError(r) + ")");
+        return nullptr;
+    }
+    devices[type] = device;
+    logInfo(std::string("하드웨어 디코딩 장치 준비: ") + av_hwdevice_get_type_name(type));
+    return device;
+}
+
 int64_t frameDurationTicks(const AVFrame* f)
 {
 #if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57, 30, 100)
@@ -82,6 +122,15 @@ struct VideoSource::Impl {
 
     std::string path;
     bool loop = true;
+    bool hardware = false;           // 하드웨어 디코딩 요청
+    AVPixelFormat hwPixelFormat = AV_PIX_FMT_NONE;
+    std::string hwName;              // 사용 중인 하드웨어 종류 (비어 있으면 CPU)
+    std::atomic<bool> hwFallback{false};
+    int hwTransferErrors = 0;
+
+    // 재생 시계 (출력이 요청한 최신 시각). 디코딩이 늦으면 프레임을 건너뛰는 기준
+    std::atomic<double> requestedTime{-1.0};
+    std::atomic<std::uint64_t> dropped{0};
 
     AVFormatContext* format = nullptr;
     AVCodecContext* codec = nullptr;
@@ -114,6 +163,54 @@ struct VideoSource::Impl {
             avcodec_free_context(&codec);
         if (format)
             avformat_close_input(&format);
+    }
+
+    static AVPixelFormat chooseFormat(AVCodecContext* ctx, const AVPixelFormat* formats)
+    {
+        auto* self = static_cast<Impl*>(ctx->opaque);
+        for (const AVPixelFormat* p = formats; *p != AV_PIX_FMT_NONE; ++p)
+            if (*p == self->hwPixelFormat)
+                return *p;
+        // 이 영상은 하드웨어 디코딩 불가: CPU 형식 선택
+        for (const AVPixelFormat* p = formats; *p != AV_PIX_FMT_NONE; ++p) {
+            const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(*p);
+            if (desc && !(desc->flags & AV_PIX_FMT_FLAG_HWACCEL)) {
+                if (!self->hwFallback.exchange(true))
+                    logWarning("하드웨어 디코딩을 지원하지 않는 영상이라 CPU로 디코딩: " + self->path);
+                return *p;
+            }
+        }
+        return AV_PIX_FMT_NONE;
+    }
+
+    bool setupHardware(const AVCodec* decoder)
+    {
+        for (AVHWDeviceType type : kHardwareTypes) {
+            AVPixelFormat pixelFormat = AV_PIX_FMT_NONE;
+            for (int i = 0;; ++i) {
+                const AVCodecHWConfig* config = avcodec_get_hw_config(decoder, i);
+                if (!config)
+                    break;
+                if ((config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX) && config->device_type == type) {
+                    pixelFormat = config->pix_fmt;
+                    break;
+                }
+            }
+            if (pixelFormat == AV_PIX_FMT_NONE)
+                continue;
+            AVBufferRef* device = sharedHardwareDevice(type);
+            if (!device)
+                continue;
+            codec->hw_device_ctx = av_buffer_ref(device);
+            if (!codec->hw_device_ctx)
+                continue;
+            hwPixelFormat = pixelFormat;
+            hwName = av_hwdevice_get_type_name(type);
+            codec->opaque = this;
+            codec->get_format = &Impl::chooseFormat;
+            return true;
+        }
+        return false;
     }
 
     bool open(std::string& error)
@@ -153,8 +250,15 @@ struct VideoSource::Impl {
             error = "디코더 설정 실패 (" + ffmpegError(r) + ")";
             return false;
         }
-        codec->thread_count = 0; // 자동 (CPU 코어 수)
-        codec->thread_type = FF_THREAD_FRAME | FF_THREAD_SLICE;
+        const bool hwReady = hardware && setupHardware(decoder);
+        if (hardware && !hwReady)
+            logInfo("하드웨어 디코딩을 쓸 수 없어 CPU로 디코딩: " + path);
+        if (hwReady) {
+            codec->thread_count = 1; // 하드웨어 디코딩은 단일 스레드가 안정적
+        } else {
+            codec->thread_count = 0; // 자동 (CPU 코어 수)
+            codec->thread_type = FF_THREAD_FRAME | FF_THREAD_SLICE;
+        }
         r = avcodec_open2(codec, decoder, nullptr);
         if (r < 0) {
             error = "디코더를 열 수 없음 (" + ffmpegError(r) + ")";
@@ -177,7 +281,8 @@ struct VideoSource::Impl {
             defaultFrameDuration = double(rate.den) / double(rate.num);
 
         logInfo("영상 열기: " + path + " (" + std::to_string(codec->width) + "x" +
-                std::to_string(codec->height) + ", " + decoder->name + ")");
+                std::to_string(codec->height) + ", " + decoder->name + ", " +
+                (hwReady ? "하드웨어 " + hwName : std::string("CPU")) + ")");
 
         thread = std::thread([this] { run(); });
         return true;
@@ -262,6 +367,11 @@ struct VideoSource::Impl {
             return;
         }
 
+        AVFrame* swFrame = av_frame_alloc();
+        std::uint64_t droppedSinceLog = 0;
+        auto lastDropLog = std::chrono::steady_clock::now();
+        double lastPushedTime = -1.0;
+
         double loopOffset = 0.0;   // 반복 재생 시 누적 시간
         double lastEnd = 0.0;      // 마지막 프레임이 끝나는 시간
         double lastTime = -1.0;
@@ -330,12 +440,49 @@ struct VideoSource::Impl {
                     t = lastTime;
                 lastTime = t;
                 lastEnd = std::max(lastEnd, t + duration);
+                ++framesThisLoop;
 
-                std::shared_ptr<Frame> converted = convert(frame);
+                // 디코딩이 재생 시각보다 늦으면 따라잡기
+                //  - 2프레임 이상 늦은 프레임은 변환하지 않고 버림 (단, 0.5초마다 1장은 표시)
+                //  - 0.5초 이상 늦으면 참조되지 않는 프레임은 디코딩 자체를 생략
+                const double clock = requestedTime.load();
+                const double lag = clock >= 0.0 ? clock - t : 0.0;
+                codec->skip_frame = lag > 0.5 ? AVDISCARD_NONREF : AVDISCARD_DEFAULT;
+                const double dropThreshold = std::max(0.05, 2.0 * defaultFrameDuration);
+                if (lag > dropThreshold && lastPushedTime >= 0.0 && t - lastPushedTime < 0.5) {
+                    av_frame_unref(frame);
+                    ++dropped;
+                    ++droppedSinceLog;
+                    const auto now = std::chrono::steady_clock::now();
+                    if (now - lastDropLog > std::chrono::seconds(5)) {
+                        logWarning("영상 처리가 재생 속도보다 느려 프레임 " + std::to_string(droppedSinceLog) +
+                                   "개를 건너뜀: " + path);
+                        droppedSinceLog = 0;
+                        lastDropLog = now;
+                    }
+                    continue;
+                }
+
+                // 하드웨어 프레임은 CPU 메모리로 복사 후 변환
+                const AVFrame* source = frame;
+                if (hwPixelFormat != AV_PIX_FMT_NONE && frame->format == hwPixelFormat) {
+                    av_frame_unref(swFrame);
+                    const int tr = av_hwframe_transfer_data(swFrame, frame, 0);
+                    if (tr < 0) {
+                        if (hwTransferErrors++ < 3)
+                            logError("하드웨어 프레임 복사 실패: " + path + " (" + ffmpegError(tr) + ")");
+                        av_frame_unref(frame);
+                        continue;
+                    }
+                    av_frame_copy_props(swFrame, frame);
+                    source = swFrame;
+                }
+
+                std::shared_ptr<Frame> converted = convert(source);
                 av_frame_unref(frame);
                 if (!converted)
                     continue;
-                ++framesThisLoop;
+                lastPushedTime = t;
                 if (!push(t, std::move(converted)))
                     break;
             }
@@ -343,6 +490,7 @@ struct VideoSource::Impl {
 
         av_packet_free(&packet);
         av_frame_free(&frame);
+        av_frame_free(&swFrame);
         if (!stopRequested) {
             // 오류로 중단된 경우에도 끝난 시각을 알려 플레이리스트가 다음 항목으로 넘어가게 함
             std::lock_guard<std::mutex> lock(mutex);
@@ -360,11 +508,22 @@ struct VideoSource::Impl {
     }
 };
 
-VideoSource::VideoSource(std::string path, bool loop)
+VideoSource::VideoSource(std::string path, bool loop, bool hardware)
     : d(std::make_unique<Impl>())
 {
     d->path = std::move(path);
     d->loop = loop;
+    d->hardware = hardware;
+}
+
+std::uint64_t VideoSource::droppedFrames() const
+{
+    return d->dropped.load();
+}
+
+std::string VideoSource::decoderName() const
+{
+    return d->hwName.empty() || d->hwFallback ? std::string("CPU") : d->hwName;
 }
 
 VideoSource::~VideoSource()
@@ -379,6 +538,10 @@ bool VideoSource::open(std::string& error)
 
 std::shared_ptr<const Frame> VideoSource::frameAt(double seconds)
 {
+    // 가장 앞선 요청 시각을 재생 시계로 사용
+    double prev = d->requestedTime.load();
+    while (seconds > prev && !d->requestedTime.compare_exchange_weak(prev, seconds)) {
+    }
     std::lock_guard<std::mutex> lock(d->mutex);
     bool popped = false;
     while (!d->queue.empty() && d->queue.front().time <= seconds) {

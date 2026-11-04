@@ -16,11 +16,11 @@ bool isStillImageFile(const std::string& path)
     return QImageReader::supportedImageFormats().contains(suffix);
 }
 
-std::shared_ptr<MediaSource> createMediaSource(const std::string& path, bool loop)
+std::shared_ptr<MediaSource> createMediaSource(const std::string& path, bool loop, bool hardware)
 {
     if (isStillImageFile(path))
         return std::make_shared<ImageSource>(path);
-    return std::make_shared<VideoSource>(path, loop);
+    return std::make_shared<VideoSource>(path, loop, hardware);
 }
 
 } // namespace led

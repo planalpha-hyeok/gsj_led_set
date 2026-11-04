@@ -45,6 +45,7 @@ private:
     QSpinBox* m_w;
     QSpinBox* m_h;
     QComboBox* m_fit;
+    QComboBox* m_decode;
     QSpinBox* m_opacity;
     QCheckBox* m_visible;
     ContentEditor* m_content;

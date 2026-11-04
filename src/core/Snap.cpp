@@ -41,28 +41,38 @@ SnapResult snapRect(const RectF& input, bool move, int edges, const std::vector<
 
     if (threshold > 0.0) {
         if (move) {
-            // 왼쪽/오른쪽 중 더 가까운 쪽에 맞춰 전체 이동
-            double dl = 0.0;
-            double dr = 0.0;
-            const bool hl = nearest(left, xs, threshold, dl);
-            const bool hr = nearest(right, xs, threshold, dr);
-            if (hl || hr) {
-                const double d = (hl && (!hr || std::fabs(dl) <= std::fabs(dr))) ? dl : dr;
-                out.guideX = (hl && d == dl) ? left + d : right + d;
-                left += d;
-                right += d;
-                out.snappedX = true;
+            // 왼쪽/가운데/오른쪽 중 기준선에 가장 가까운 것에 맞춰 전체 이동
+            const double xsCand[3] = {left, (left + right) / 2.0, right};
+            double bestX = 0.0;
+            double bestXAbs = threshold + 1.0;
+            for (double v : xsCand) {
+                double d = 0.0;
+                if (nearest(v, xs, threshold, d) && std::fabs(d) < bestXAbs) {
+                    bestXAbs = std::fabs(d);
+                    bestX = d;
+                    out.guideX = v + d;
+                    out.snappedX = true;
+                }
             }
-            double dt = 0.0;
-            double db = 0.0;
-            const bool ht = nearest(top, ys, threshold, dt);
-            const bool hb = nearest(bottom, ys, threshold, db);
-            if (ht || hb) {
-                const double d = (ht && (!hb || std::fabs(dt) <= std::fabs(db))) ? dt : db;
-                out.guideY = (ht && d == dt) ? top + d : bottom + d;
-                top += d;
-                bottom += d;
-                out.snappedY = true;
+            if (out.snappedX) {
+                left += bestX;
+                right += bestX;
+            }
+            const double ysCand[3] = {top, (top + bottom) / 2.0, bottom};
+            double bestY = 0.0;
+            double bestYAbs = threshold + 1.0;
+            for (double v : ysCand) {
+                double d = 0.0;
+                if (nearest(v, ys, threshold, d) && std::fabs(d) < bestYAbs) {
+                    bestYAbs = std::fabs(d);
+                    bestY = d;
+                    out.guideY = v + d;
+                    out.snappedY = true;
+                }
+            }
+            if (out.snappedY) {
+                top += bestY;
+                bottom += bestY;
             }
         } else {
             double d = 0.0;

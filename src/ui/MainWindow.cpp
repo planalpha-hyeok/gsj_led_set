@@ -73,6 +73,7 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_controller, &ProjectController::regionsChanged, this, &MainWindow::onRegionsChanged);
     connect(m_controller, &ProjectController::contentChanged, this, &MainWindow::onPlaybackContentChanged);
     connect(m_controller, &ProjectController::scenesChanged, this, &MainWindow::onPlaybackContentChanged);
+    connect(m_controller, &ProjectController::playbackSettingsChanged, this, &MainWindow::onPlaybackContentChanged);
     connect(m_controller, &ProjectController::outputsChanged, this, &MainWindow::onOutputsChanged);
     connect(m_controller, &ProjectController::canvasChanged, this, &MainWindow::updateStatus);
     connect(m_controller, &ProjectController::dirtyChanged, this, &MainWindow::updateTitle);
@@ -564,7 +565,9 @@ void MainWindow::updateTitle()
 {
     const QString file = m_controller->filePath().isEmpty() ? QStringLiteral("새 프로젝트")
                                                             : QFileInfo(m_controller->filePath()).fileName();
-    setWindowTitle(QStringLiteral("%1%2 - GSJ LED 플레이어").arg(file, m_controller->isDirty() ? QStringLiteral("*") : QString()));
+    setWindowTitle(QStringLiteral("%1%2 - GSJ LED 플레이어 %3")
+                       .arg(file, m_controller->isDirty() ? QStringLiteral("*") : QString(),
+                            QApplication::applicationVersion()));
 }
 
 void MainWindow::updateStatus()

@@ -44,15 +44,19 @@ int main(int argc, char* argv[])
         if (later && first)
             CHECK(later->serial > first->serial);
 
-        // 반복 재생: 1초 영상에서 2.5초 시점 프레임이 나와야 함
+        // 반복 재생 + 따라잡기: 1초 영상에서 갑자기 2.5초를 요청하면
+        // 늦은 프레임은 변환 없이 건너뛰고(droppedFrames 증가) 2.5초 시점까지 도달해야 함
         std::shared_ptr<const Frame> looped;
+        const std::uint64_t droppedBefore = source.droppedFrames();
         for (int i = 0; i < 300; ++i) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
             looped = source.frameAt(2.5);
-            if (looped && later && looped->serial > later->serial + 40)
+            if (looped && later && looped != later && source.droppedFrames() > droppedBefore + 20)
                 break;
         }
-        CHECK(looped && later && looped->serial > later->serial + 40);
+        CHECK(looped && later && looped != later);
+        CHECK(source.droppedFrames() > droppedBefore + 20);
+        CHECK(source.decoderName() == "CPU");
         source.stop();
         source.stop(); // 두 번 호출해도 안전해야 함
     }
@@ -69,6 +73,23 @@ int main(int argc, char* argv[])
         }
         CHECK(last != nullptr);
         CHECK(source.frameAt(200.0) == last);
+    }
+
+    {
+        // 하드웨어 디코딩 요청: 장치가 없거나 지원하지 않으면 CPU로 자동 전환되어 정상 재생
+        VideoSource source(argv[1], true, true);
+        std::string error;
+        CHECK(source.open(error));
+        CHECK(source.waitForFirstFrame(3000));
+        auto f = source.frameAt(0.0);
+        CHECK(f && f->width == 320 && f->height == 240);
+        std::printf("하드웨어 요청 시 디코더: %s\n", source.decoderName().c_str());
+        std::shared_ptr<const Frame> next;
+        for (int i = 0; i < 100 && (!next || next == f); ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            next = source.frameAt(0.5);
+        }
+        CHECK(next && next != f);
     }
 
     {

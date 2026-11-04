@@ -15,6 +15,8 @@ namespace {
 constexpr int kFirstFrameTimeoutMs = 3000;
 constexpr auto kControlInterval = std::chrono::milliseconds(10);
 constexpr std::uint64_t kTickerKeyFlag = 1ULL << 63;
+// 이 시간 안에 화면을 갱신하는 출력들은 같은 프레임을 표시 (60Hz 1프레임 = 16.7ms의 약 1/3)
+constexpr auto kShareWindow = std::chrono::milliseconds(6);
 
 double secondsBetween(PlaybackClock::time_point from, PlaybackClock::time_point to)
 {
@@ -26,6 +28,7 @@ double secondsBetween(PlaybackClock::time_point from, PlaybackClock::time_point 
 struct PlaybackEngine::Slot {
     Region region;
     RegionContent content;
+    bool hardware = false;   // 실제 적용된 디코딩 방식 (바뀌면 다시 열어야 함)
     std::unique_ptr<PlaylistPlayer> playlist;
     std::unique_ptr<TickerPlayer> ticker;
 
@@ -71,10 +74,13 @@ std::vector<std::unique_ptr<PlaybackEngine::Slot>> PlaybackEngine::buildSlots(
         if (!content || content->isEmpty())
             continue;
 
-        // 내용이 같은 기존 영역은 재생을 이어감 (위치/표시 방식만 갱신)
+        const bool hardware = effectiveHardwareDecoding(project, region);
+
+        // 내용과 디코딩 방식이 같은 기존 영역은 재생을 이어감 (위치/표시 방식만 갱신)
         if (reuse) {
             auto it = std::find_if(reuse->begin(), reuse->end(), [&](const std::unique_ptr<Slot>& s) {
-                return s && s->region.id == region.id && s->content == *content;
+                return s && s->region.id == region.id && s->content == *content &&
+                       (s->hardware == hardware || content->kind == ContentKind::Ticker);
             });
             if (it != reuse->end()) {
                 std::unique_ptr<Slot> slot = std::move(*it);
@@ -89,13 +95,14 @@ std::vector<std::unique_ptr<PlaybackEngine::Slot>> PlaybackEngine::buildSlots(
         auto slot = std::make_unique<Slot>();
         slot->region = region;
         slot->content = *content;
+        slot->hardware = hardware;
         std::vector<std::string> slotErrors;
         bool ok;
         if (content->kind == ContentKind::Ticker) {
             slot->ticker = std::make_unique<TickerPlayer>(*content, region.rect.w, region.rect.h);
             ok = slot->ticker->prepare(slotErrors);
         } else {
-            slot->playlist = std::make_unique<PlaylistPlayer>(*content);
+            slot->playlist = std::make_unique<PlaylistPlayer>(*content, hardware);
             ok = slot->playlist->prepare(slotErrors);
         }
         for (const std::string& e : slotErrors)
@@ -214,6 +221,11 @@ void PlaybackEngine::stop()
         std::lock_guard<std::mutex> lock(m_viewMutex);
         m_views.reset();
     }
+    {
+        std::lock_guard<std::mutex> lock(m_shareMutex);
+        m_sharedViews.reset();
+        m_sharedLayers.clear();
+    }
     for (auto& s : slotList)
         s->stop();
     if (wasPlaying)
@@ -277,10 +289,24 @@ void PlaybackEngine::collect(std::vector<SceneLayer>& out)
     if (!views)
         return;
 
+    std::lock_guard<std::mutex> lock(m_shareMutex);
     const auto now = PlaybackClock::now();
+    if (m_sharedViews && now - m_sharedTime < kShareWindow) {
+        out = m_sharedLayers; // 다른 출력이 방금 계산한 결과 사용
+        return;
+    }
+    computeLayers(*views, now, out);
+    m_sharedViews = views;
+    m_sharedTime = now;
+    m_sharedLayers = out;
+}
+
+void PlaybackEngine::computeLayers(const std::vector<RegionView>& views, PlaybackClock::time_point now,
+                                   std::vector<SceneLayer>& out)
+{
     std::vector<double> positions;
 
-    for (const RegionView& view : *views) {
+    for (const RegionView& view : views) {
         if (view.opacity <= 0.0f)
             continue;
         const RectF regionRect{double(view.rect.x), double(view.rect.y), double(view.rect.w), double(view.rect.h)};

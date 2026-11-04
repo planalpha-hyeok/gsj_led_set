@@ -386,4 +386,13 @@ void ProjectController::setAutoStart(bool enabled)
     emit scheduleChanged();
 }
 
+void ProjectController::setHardwareDecoding(bool enabled)
+{
+    if (m_project.hardwareDecoding == enabled)
+        return;
+    m_project.hardwareDecoding = enabled;
+    setDirty(true);
+    emit playbackSettingsChanged();
+}
+
 } // namespace led

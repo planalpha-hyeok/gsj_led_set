@@ -134,6 +134,34 @@ bool transitionFromKey(const std::string& key, TransitionType& out)
     return false;
 }
 
+const char* decodeModeKey(DecodeMode m)
+{
+    switch (m) {
+    case DecodeMode::Default: return "default";
+    case DecodeMode::Hardware: return "hardware";
+    case DecodeMode::Software: return "software";
+    }
+    return "default";
+}
+
+bool decodeModeFromKey(const std::string& key, DecodeMode& out)
+{
+    if (key == "default") { out = DecodeMode::Default; return true; }
+    if (key == "hardware") { out = DecodeMode::Hardware; return true; }
+    if (key == "software") { out = DecodeMode::Software; return true; }
+    return false;
+}
+
+bool effectiveHardwareDecoding(const Project& project, const Region& region)
+{
+    switch (region.decode) {
+    case DecodeMode::Hardware: return true;
+    case DecodeMode::Software: return false;
+    case DecodeMode::Default: break;
+    }
+    return project.hardwareDecoding;
+}
+
 const char* tickerDirectionKey(TickerDirection d)
 {
     switch (d) {

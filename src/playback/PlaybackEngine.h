@@ -41,9 +41,12 @@ public:
     bool isPlaying() const;
     std::string sceneId() const;
 
+    // 출력 화면 갱신 시점이 6ms 이내로 가까운 출력들은 같은 계산 결과(같은 프레임)를 공유
     void collect(std::vector<SceneLayer>& out) override;
 
 private:
+    void computeLayers(const std::vector<RegionView>& views, PlaybackClock::time_point now,
+                       std::vector<SceneLayer>& out);
     struct Slot;
 
     std::vector<std::unique_ptr<Slot>> buildSlots(const Project& project, const Scene& scene,
@@ -64,6 +67,12 @@ private:
     // 출력 스레드가 읽는 최신 화면 정보
     mutable std::mutex m_viewMutex;
     std::shared_ptr<const std::vector<RegionView>> m_views;
+
+    // 출력 간 공유용 최근 계산 결과
+    std::mutex m_shareMutex;
+    std::shared_ptr<const std::vector<RegionView>> m_sharedViews;
+    PlaybackClock::time_point m_sharedTime;
+    std::vector<SceneLayer> m_sharedLayers;
 
     std::thread m_control;
     std::atomic<bool> m_controlStop{false};

@@ -4,6 +4,7 @@
 #include "ui/FormHelpers.h"
 #include "ui/ProjectController.h"
 
+#include <QCheckBox>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QLabel>
@@ -36,6 +37,19 @@ CanvasPanel::CanvasPanel(ProjectController* controller, QWidget* parent)
     form->addRow(QString(), fitRegions);
     layout->addWidget(group);
 
+    auto* playback = new QGroupBox(QStringLiteral("재생 설정"), this);
+    auto* playbackLayout = new QVBoxLayout(playback);
+    m_hardwareDecoding = new QCheckBox(QStringLiteral("하드웨어 디코딩 사용 (그래픽카드로 영상 처리)"), playback);
+    playbackLayout->addWidget(m_hardwareDecoding);
+    auto* hwHint = new QLabel(QStringLiteral("CPU 부하를 줄여 고해상도 영상을 여러 개 재생할 때 유리합니다.\n"
+                                             "지원하지 않는 영상/그래픽카드는 자동으로 CPU로 처리합니다.\n"
+                                             "영상이 깨지거나 멈추면 끄고 확인하세요. 영역별 설정은 '영역' 탭."),
+                              playback);
+    hwHint->setObjectName("hintLabel");
+    hwHint->setWordWrap(true);
+    playbackLayout->addWidget(hwHint);
+    layout->addWidget(playback);
+
     m_summary = new QLabel(this);
     m_summary->setObjectName("hintLabel");
     m_summary->setWordWrap(true);
@@ -51,6 +65,11 @@ CanvasPanel::CanvasPanel(ProjectController* controller, QWidget* parent)
 
     connect(m_width, QOverload<int>::of(&QSpinBox::valueChanged), this, &CanvasPanel::commit);
     connect(m_height, QOverload<int>::of(&QSpinBox::valueChanged), this, &CanvasPanel::commit);
+    connect(m_hardwareDecoding, &QCheckBox::toggled, this, [this](bool on) {
+        if (!m_loading)
+            m_controller->setHardwareDecoding(on);
+    });
+    connect(controller, &ProjectController::playbackSettingsChanged, this, &CanvasPanel::load);
     connect(fitOutputs, &QPushButton::clicked, this, &CanvasPanel::fitToOutputs);
     connect(fitRegions, &QPushButton::clicked, this, &CanvasPanel::fitToRegions);
 
@@ -67,6 +86,7 @@ void CanvasPanel::load()
     m_loading = true;
     m_width->setValue(p.canvas.width);
     m_height->setValue(p.canvas.height);
+    m_hardwareDecoding->setChecked(p.hardwareDecoding);
     m_loading = false;
 
     int enabled = 0;

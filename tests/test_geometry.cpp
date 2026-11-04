@@ -160,6 +160,18 @@ static void testSnap()
     CHECK(r.rect == (RectI{1420, 500, 500, 100}));
     CHECK(r.snappedX && near(r.guideX, 1920) && !r.snappedY);
 
+    // 가운데 맞춤: 영역 가운데(1916)가 기준선 1920에 붙음
+    {
+        const std::vector<double> cx{0, 1920, 3840};
+        r = snapRect(RectF{1666, 500, 500, 100}, true, 0, cx, ys, 8); // 가운데 1916
+        CHECK(r.rect == (RectI{1670, 500, 500, 100}));
+        CHECK(r.snappedX && near(r.guideX, 1920));
+        // 세로 가운데: 가운데 540 근처
+        const std::vector<double> cy{0, 540, 1080};
+        r = snapRect(RectF{100, 493, 50, 100}, true, 0, cx, cy, 8); // 가운데 543
+        CHECK(r.rect == (RectI{100, 490, 50, 100}) && r.snappedY && near(r.guideY, 540));
+    }
+
     // 범위 밖: 반올림만
     r = snapRect(RectF{100.6, 200.4, 50.2, 60.7}, true, 0, xs, ys, 8);
     CHECK(r.rect == (RectI{101, 200, 50, 61}));

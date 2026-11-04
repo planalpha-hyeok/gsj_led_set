@@ -17,6 +17,13 @@ struct CanvasConfig {
     int height = 1080;
 };
 
+// 영상 디코딩 방식
+enum class DecodeMode {
+    Default,   // 프로젝트 전체 설정 따름
+    Hardware,  // 그래픽카드 (지원하지 않으면 자동으로 CPU)
+    Software   // CPU
+};
+
 // 캔버스 위의 재생 영역 (위치와 표시 방식). 내용은 장면마다 따로 지정
 struct Region {
     std::string id;
@@ -25,6 +32,7 @@ struct Region {
     FitMode fit = FitMode::Stretch;
     double opacity = 1.0;    // 0.0 ~ 1.0
     bool visible = true;
+    DecodeMode decode = DecodeMode::Default;
 };
 
 // ---------------------------------------------------------------- 플레이리스트
@@ -141,6 +149,7 @@ struct Project {
     Schedule schedule;
     std::vector<OutputConfig> outputs;
     bool autoStart = false;           // 프로그램 시작 시 출력 켜기 + 재생(또는 스케줄 운영)
+    bool hardwareDecoding = true;     // 영상 하드웨어 디코딩 (영역별 설정이 '전체 설정 따름'일 때)
 
     Region* findRegion(const std::string& id);
     const Region* findRegion(const std::string& id) const;
@@ -156,6 +165,10 @@ const char* fitModeKey(FitMode mode);
 bool fitModeFromKey(const std::string& key, FitMode& out);
 const char* transitionKey(TransitionType t);
 bool transitionFromKey(const std::string& key, TransitionType& out);
+const char* decodeModeKey(DecodeMode m);
+bool decodeModeFromKey(const std::string& key, DecodeMode& out);
+// 영역에 실제로 적용할 디코딩 방식 (true = 하드웨어)
+bool effectiveHardwareDecoding(const Project& project, const Region& region);
 const char* tickerDirectionKey(TickerDirection d);
 bool tickerDirectionFromKey(const std::string& key, TickerDirection& out);
 

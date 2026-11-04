@@ -389,10 +389,13 @@ void CanvasView::regionGeometryFinished(const QString& id, const RectI& rect)
 void CanvasView::snapTargets(const QString& excludeId, std::vector<double>& xs, std::vector<double>& ys) const
 {
     const Project& p = m_controller->project();
+    // 테두리와 가운데선
     auto add = [&](const RectI& r) {
         xs.push_back(r.x);
+        xs.push_back(r.x + r.w / 2.0);
         xs.push_back(r.right());
         ys.push_back(r.y);
+        ys.push_back(r.y + r.h / 2.0);
         ys.push_back(r.bottom());
     };
     add(RectI{0, 0, p.canvas.width, p.canvas.height});

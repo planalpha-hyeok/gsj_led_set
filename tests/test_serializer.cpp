@@ -25,7 +25,9 @@ static Project makeSample()
     r2.rect = RectI{0, 2000, 7680, 160};
     r2.fit = FitMode::Original;
     r2.visible = false;
+    r2.decode = DecodeMode::Software;
     p.regions.push_back(r2);
+    p.hardwareDecoding = false;
 
     Scene s;
     s.id = "s1";
@@ -118,6 +120,8 @@ static void testRoundTrip()
         CHECK(loaded.regions[0].fit == FitMode::Fill);
         CHECK(test::near(loaded.regions[0].opacity, 0.75));
         CHECK(!loaded.regions[1].visible);
+        CHECK(loaded.regions[0].decode == DecodeMode::Default);
+        CHECK(loaded.regions[1].decode == DecodeMode::Software);
     }
 
     CHECK(loaded.scenes.size() == 2);
@@ -150,6 +154,7 @@ static void testRoundTrip()
         CHECK(b.date == "2026-12-24" && !b.enabled && b.startMinute == 1320 && b.endMinute == 120);
     }
     CHECK(loaded.autoStart);
+    CHECK(!loaded.hardwareDecoding);
 
     CHECK(loaded.outputs.size() == 1);
     if (loaded.outputs.size() == 1) {
@@ -200,6 +205,24 @@ static void testVersion1Migration()
         CHECK(test::near(p.regions[1].opacity, 0.5));
     }
     CHECK(!p.schedule.enabled);
+    CHECK(p.hardwareDecoding); // 예전 파일: 기본값 켜짐
+    if (!p.regions.empty())
+        CHECK(p.regions[0].decode == DecodeMode::Default);
+}
+
+static void testEffectiveDecode()
+{
+    Project p;
+    Region r;
+    p.hardwareDecoding = true;
+    CHECK(effectiveHardwareDecoding(p, r));
+    p.hardwareDecoding = false;
+    CHECK(!effectiveHardwareDecoding(p, r));
+    r.decode = DecodeMode::Hardware;
+    CHECK(effectiveHardwareDecoding(p, r));
+    p.hardwareDecoding = true;
+    r.decode = DecodeMode::Software;
+    CHECK(!effectiveHardwareDecoding(p, r));
 }
 
 static void testInvalidInput()
@@ -273,5 +296,6 @@ int main()
     testInvalidInput();
     testNormalize();
     testHelpers();
+    testEffectiveDecode();
     return test::finish("test_serializer");
 }

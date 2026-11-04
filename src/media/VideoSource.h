@@ -5,6 +5,7 @@
 
 #include "media/MediaSource.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -12,7 +13,8 @@ namespace led {
 
 class VideoSource final : public MediaSource {
 public:
-    VideoSource(std::string path, bool loop);
+    // hardware: 그래픽카드 디코딩 시도 (불가능하면 자동으로 CPU)
+    VideoSource(std::string path, bool loop, bool hardware = false);
     ~VideoSource() override;
 
     VideoSource(const VideoSource&) = delete;
@@ -25,6 +27,11 @@ public:
     const std::string& path() const override;
     double durationHint() const override;
     double endTime() const override;
+
+    // 디코딩이 늦어 건너뛴 프레임 수 (검사/진단용)
+    std::uint64_t droppedFrames() const;
+    // 실제 사용 중인 디코더 ("CPU" 또는 하드웨어 종류)
+    std::string decoderName() const;
 
 private:
     struct Impl;

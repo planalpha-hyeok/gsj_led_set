@@ -160,6 +160,8 @@ bool readRegions(const QJsonObject& root, Project& p, int version, QString* erro
             r.fit = FitMode::Stretch;
         r.opacity = std::clamp(o.value("opacity").toDouble(1.0), 0.0, 1.0);
         r.visible = o.value("visible").toBool(true);
+        if (!decodeModeFromKey(ss(o.value("decode").toString("default")), r.decode))
+            r.decode = DecodeMode::Default;
         if (r.rect.w < 1 || r.rect.h < 1) {
             setError(error, QStringLiteral("영역 '%1'의 크기가 잘못됨").arg(qs(r.name)));
             return false;
@@ -227,6 +229,7 @@ QByteArray projectToJson(const Project& project)
         o["fit"] = QString::fromLatin1(fitModeKey(r.fit));
         o["opacity"] = r.opacity;
         o["visible"] = r.visible;
+        o["decode"] = QString::fromLatin1(decodeModeKey(r.decode));
         regions.append(o);
     }
     root["regions"] = regions;
@@ -279,6 +282,7 @@ QByteArray projectToJson(const Project& project)
     }
     root["outputs"] = outputs;
     root["autoStart"] = project.autoStart;
+    root["hardwareDecoding"] = project.hardwareDecoding;
 
     return QJsonDocument(root).toJson(QJsonDocument::Indented);
 }
@@ -348,6 +352,7 @@ bool projectFromJson(const QByteArray& json, Project& out, QString* error)
             p.schedule.entries.push_back(std::move(e));
         }
         p.autoStart = root.value("autoStart").toBool(false);
+        p.hardwareDecoding = root.value("hardwareDecoding").toBool(true);
     }
 
     for (const QJsonValue& v : root.value("outputs").toArray()) {

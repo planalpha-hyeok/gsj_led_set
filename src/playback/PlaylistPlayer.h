@@ -16,7 +16,8 @@ namespace led {
 
 class PlaylistPlayer {
 public:
-    explicit PlaylistPlayer(RegionContent content);
+    // hardwareDecoding: 영상 항목을 그래픽카드로 디코딩 (불가능하면 자동으로 CPU)
+    PlaylistPlayer(RegionContent content, bool hardwareDecoding);
     ~PlaylistPlayer();
 
     PlaylistPlayer(const PlaylistPlayer&) = delete;
@@ -48,6 +49,7 @@ private:
     void startPreload(std::size_t index);
 
     RegionContent m_content;
+    bool m_hardware = false;
     std::optional<Run> m_current;
     std::optional<Run> m_outgoing;
     std::future<std::shared_ptr<MediaSource>> m_preload;

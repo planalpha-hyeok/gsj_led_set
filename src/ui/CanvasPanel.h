@@ -4,6 +4,7 @@
 
 #include <QWidget>
 
+class QCheckBox;
 class QLabel;
 class QSpinBox;
 
@@ -28,6 +29,7 @@ private:
     QSpinBox* m_width;
     QSpinBox* m_height;
     QLabel* m_summary;
+    QCheckBox* m_hardwareDecoding;
     bool m_loading = false;
 };
 

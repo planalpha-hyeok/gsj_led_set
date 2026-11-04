@@ -106,6 +106,12 @@ RegionPanel::RegionPanel(ProjectController* controller, QWidget* parent)
     m_fit->addItem(QStringLiteral("원본 1:1 (좌상단 기준)"), int(FitMode::Original));
     form->addRow(QStringLiteral("맞춤 방식"), m_fit);
 
+    m_decode = new QComboBox(group);
+    m_decode->addItem(QStringLiteral("전체 설정 따름 (캔버스 탭)"), int(DecodeMode::Default));
+    m_decode->addItem(QStringLiteral("하드웨어 (그래픽카드)"), int(DecodeMode::Hardware));
+    m_decode->addItem(QStringLiteral("CPU"), int(DecodeMode::Software));
+    form->addRow(QStringLiteral("영상 디코딩"), m_decode);
+
     auto* row = new QHBoxLayout;
     m_opacity = new QSpinBox(group);
     m_opacity->setRange(0, 100);
@@ -138,6 +144,7 @@ RegionPanel::RegionPanel(ProjectController* controller, QWidget* parent)
     for (QSpinBox* box : {m_x, m_y, m_w, m_h, m_opacity})
         connect(box, QOverload<int>::of(&QSpinBox::valueChanged), this, &RegionPanel::commit);
     connect(m_fit, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &RegionPanel::commit);
+    connect(m_decode, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &RegionPanel::commit);
     connect(m_visible, &QCheckBox::toggled, this, &RegionPanel::commit);
 
     connect(controller, &ProjectController::projectReset, this, &RegionPanel::refreshList);
@@ -214,6 +221,7 @@ void RegionPanel::loadSelected()
     m_w->setValue(r->rect.w);
     m_h->setValue(r->rect.h);
     m_fit->setCurrentIndex(std::max(0, m_fit->findData(int(r->fit))));
+    m_decode->setCurrentIndex(std::max(0, m_decode->findData(int(r->decode))));
     m_opacity->setValue(qRound(r->opacity * 100.0));
     m_visible->setChecked(r->visible);
     m_loading = false;
@@ -232,11 +240,13 @@ void RegionPanel::commit()
         r.name = current->name;
     r.rect = RectI{m_x->value(), m_y->value(), m_w->value(), m_h->value()};
     r.fit = static_cast<FitMode>(m_fit->currentData().toInt());
+    r.decode = static_cast<DecodeMode>(m_decode->currentData().toInt());
     r.opacity = m_opacity->value() / 100.0;
     r.visible = m_visible->isChecked();
 
     const bool changed = r.name != current->name || r.rect != current->rect || r.fit != current->fit ||
-                         r.opacity != current->opacity || r.visible != current->visible;
+                         r.opacity != current->opacity || r.visible != current->visible ||
+                         r.decode != current->decode;
     if (changed)
         m_controller->updateRegion(r);
 }

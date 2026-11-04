@@ -58,6 +58,9 @@ public:
     void setScheduleEnabled(bool enabled);
     void setAutoStart(bool enabled);
 
+    // 재생 설정
+    void setHardwareDecoding(bool enabled);
+
 signals:
     void projectReset();
     void regionsChanged();
@@ -69,6 +72,7 @@ signals:
     void editingSceneChanged(const QString& id);
     void contentChanged(const QString& sceneId, const QString& regionId);
     void scheduleChanged();
+    void playbackSettingsChanged();
 
 private:
     void setDirty(bool dirty);

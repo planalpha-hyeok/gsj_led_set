@@ -16,13 +16,13 @@ std::uint64_t nextRenderKey()
 
 namespace {
 
-std::shared_ptr<MediaSource> openSource(const std::string& path, bool loop, std::string& error)
+std::shared_ptr<MediaSource> openSource(const std::string& path, bool loop, bool hardware, std::string& error)
 {
     if (path.empty()) {
         error = "파일이 지정되지 않음";
         return nullptr;
     }
-    std::shared_ptr<MediaSource> source = createMediaSource(path, loop);
+    std::shared_ptr<MediaSource> source = createMediaSource(path, loop, hardware);
     if (!source->open(error)) {
         source->stop();
         return nullptr;
@@ -37,8 +37,9 @@ PlaybackClock::duration seconds(double s)
 
 } // namespace
 
-PlaylistPlayer::PlaylistPlayer(RegionContent content)
+PlaylistPlayer::PlaylistPlayer(RegionContent content, bool hardwareDecoding)
     : m_content(std::move(content))
+    , m_hardware(hardwareDecoding)
 {
 }
 
@@ -91,9 +92,10 @@ void PlaylistPlayer::startPreload(std::size_t index)
     m_preloading = true;
     const std::string path = m_content.items[index].source;
     const bool loop = sourceLoops(index);
-    m_preload = std::async(std::launch::async, [path, loop]() -> std::shared_ptr<MediaSource> {
+    const bool hardware = m_hardware;
+    m_preload = std::async(std::launch::async, [path, loop, hardware]() -> std::shared_ptr<MediaSource> {
         std::string error;
-        std::shared_ptr<MediaSource> source = openSource(path, loop, error);
+        std::shared_ptr<MediaSource> source = openSource(path, loop, hardware, error);
         if (!source)
             logError("플레이리스트 항목을 열 수 없음: " + error + " [" + path + "]");
         return source;
@@ -105,7 +107,7 @@ bool PlaylistPlayer::prepare(std::vector<std::string>& errors)
     const std::size_t n = m_content.items.size();
     for (std::size_t i = 0; i < n; ++i) {
         std::string error;
-        std::shared_ptr<MediaSource> source = openSource(m_content.items[i].source, sourceLoops(i), error);
+        std::shared_ptr<MediaSource> source = openSource(m_content.items[i].source, sourceLoops(i), m_hardware, error);
         if (!source) {
             errors.push_back(error + " [" + m_content.items[i].source + "]");
             continue;

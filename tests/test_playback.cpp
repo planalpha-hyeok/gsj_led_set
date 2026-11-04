@@ -252,6 +252,30 @@ static void testTicker()
     engine.stop();
 }
 
+static void testSharedFrame(const std::string& red)
+{
+    // 거의 동시에 화면을 갱신하는 출력들은 같은 계산 결과를 받아야 함
+    Project p = baseProject();
+    RegionContent c;
+    c.regionId = "r";
+    c.items = {item(red, 0.0)};
+    p.scenes[0].contents.push_back(c);
+    PlaybackEngine engine;
+    std::vector<std::string> errors;
+    engine.play(p, "s", errors);
+    CHECK(waitFor(engine, 200, [](const auto& l) { return l.size() == 1; }));
+    std::vector<SceneLayer> a;
+    std::vector<SceneLayer> b;
+    engine.collect(a);
+    engine.collect(b);
+    CHECK(a.size() == 1 && b.size() == 1);
+    if (a.size() == 1 && b.size() == 1)
+        CHECK(a[0].frame == b[0].frame && a[0].key == b[0].key && test::near(a[0].dst.x, b[0].dst.x));
+    engine.stop();
+    engine.collect(a);
+    CHECK(a.empty()); // 정지 후에는 공유 결과도 비움
+}
+
 static void testVideoEnd(const std::string& video, const std::string& blue)
 {
     // 자동 길이 영상(약 1초) 다음 항목으로 넘어가는지
@@ -288,6 +312,7 @@ int main(int argc, char* argv[])
     testMissingFileSkipped(red, blue);
     testLiveUpdate(red, blue);
     testTicker();
+    testSharedFrame(red);
     if (argc > 1)
         testVideoEnd(argv[1], blue);
     else
