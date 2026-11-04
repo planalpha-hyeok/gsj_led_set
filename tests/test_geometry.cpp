@@ -3,6 +3,7 @@
 #include "TestUtil.h"
 
 #include "core/Geometry.h"
+#include "core/Snap.h"
 #include "core/TickerMotion.h"
 #include "render/Scene.h"
 
@@ -144,8 +145,46 @@ static void testDrawItems()
     CHECK(items.empty());
 }
 
+static void testSnap()
+{
+    const std::vector<double> xs{0, 1920, 3840};
+    const std::vector<double> ys{0, 1080};
+
+    // 이동: 왼쪽 테두리가 1920 근처(5px) -> 1920에 붙음, 크기 유지
+    SnapResult r = snapRect(RectF{1915.4, 3.0, 500, 300}, true, 0, xs, ys, 8);
+    CHECK(r.rect == (RectI{1920, 0, 500, 300}));
+    CHECK(r.snappedX && r.snappedY && near(r.guideX, 1920) && near(r.guideY, 0));
+
+    // 이동: 오른쪽 테두리가 더 가까우면 오른쪽 기준 (1418+500=1918 -> 1920)
+    r = snapRect(RectF{1418, 500, 500, 100}, true, 0, xs, ys, 8);
+    CHECK(r.rect == (RectI{1420, 500, 500, 100}));
+    CHECK(r.snappedX && near(r.guideX, 1920) && !r.snappedY);
+
+    // 범위 밖: 반올림만
+    r = snapRect(RectF{100.6, 200.4, 50.2, 60.7}, true, 0, xs, ys, 8);
+    CHECK(r.rect == (RectI{101, 200, 50, 61}));
+    CHECK(!r.snappedX && !r.snappedY);
+
+    // 크기 변경: 오른쪽/아래 테두리만 붙음, 왼쪽/위는 고정
+    r = snapRect(RectF{100, 100, 1815, 975}, false, SnapRight | SnapBottom, xs, ys, 8);
+    CHECK(r.rect == (RectI{100, 100, 1820, 980}));
+
+    // 크기 변경: 왼쪽 테두리 -> 0에 붙고 오른쪽은 고정
+    r = snapRect(RectF{6, 100, 994, 50}, false, SnapLeft, xs, ys, 8);
+    CHECK(r.rect == (RectI{0, 100, 1000, 50}));
+
+    // 자석 끔 (threshold 0)
+    r = snapRect(RectF{1917, 0, 10, 10}, true, 0, xs, ys, 0);
+    CHECK(r.rect == (RectI{1917, 0, 10, 10}) && !r.snappedX);
+
+    // 크기가 0 이하로 뒤집히지 않음
+    r = snapRect(RectF{100, 100, -20, -5}, false, SnapRight | SnapBottom, {}, {}, 8);
+    CHECK(r.rect.w == 1 && r.rect.h == 1 && r.rect.x == 100 && r.rect.y == 100);
+}
+
 int main()
 {
+    testSnap();
     testStretch();
     testFit();
     testFill();

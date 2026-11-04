@@ -1,14 +1,19 @@
 #include "ui/CanvasView.h"
 
+#include "core/Snap.h"
 #include "display/DisplayInfo.h"
 #include "ui/ProjectController.h"
 
+#include <QGraphicsLineItem>
 #include <QGraphicsRectItem>
+#include <QGraphicsSceneHoverEvent>
 #include <QGraphicsSceneMouseEvent>
 #include <QGraphicsSimpleTextItem>
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QScrollBar>
+#include <QSettings>
 #include <QStyleOptionGraphicsItem>
 #include <QWheelEvent>
 
@@ -23,6 +28,9 @@ namespace {
 const QColor kRegionColors[] = {QColor(235, 87, 87),  QColor(76, 194, 120), QColor(74, 144, 226),
                                 QColor(242, 184, 56), QColor(186, 104, 230), QColor(64, 200, 200)};
 const QColor kOutputColor(255, 255, 255);
+const QColor kGuideColor(255, 64, 200);
+constexpr double kHandleScreenPx = 7.0;  // 테두리 잡기 범위 (화면 픽셀)
+constexpr double kSnapScreenPx = 8.0;    // 자석 거리 (화면 픽셀)
 
 QGraphicsSimpleTextItem* makeLabel(QGraphicsItem* parent, const QString& text, const QColor& color)
 {
@@ -33,9 +41,23 @@ QGraphicsSimpleTextItem* makeLabel(QGraphicsItem* parent, const QString& text, c
     return label;
 }
 
+Qt::CursorShape cursorFor(int edges, bool move)
+{
+    if (move)
+        return Qt::SizeAllCursor;
+    const bool l = edges & SnapLeft, r = edges & SnapRight, t = edges & SnapTop, b = edges & SnapBottom;
+    if ((l && t) || (r && b))
+        return Qt::SizeFDiagCursor;
+    if ((r && t) || (l && b))
+        return Qt::SizeBDiagCursor;
+    if (l || r)
+        return Qt::SizeHorCursor;
+    return Qt::SizeVerCursor;
+}
+
 } // namespace
 
-// 영역 1개를 나타내는 사각형. 드래그로 이동 (정수 픽셀 단위로 맞춤)
+// 영역 1개를 나타내는 사각형. 안쪽을 끌면 이동, 테두리/모서리를 끌면 크기 변경
 class RegionItem : public QGraphicsRectItem {
 public:
     RegionItem(CanvasView* view, const QString& id, const QColor& color)
@@ -43,27 +65,34 @@ public:
         , m_id(id)
         , m_color(color)
     {
-        setFlags(ItemIsMovable | ItemIsSelectable | ItemSendsGeometryChanges);
+        setFlags(ItemIsSelectable);
         setAcceptHoverEvents(true);
         setCursor(Qt::SizeAllCursor);
     }
 
     void setLabel(QGraphicsSimpleTextItem* label) { m_label = label; }
+    void setName(const QString& name) { m_name = name; }
 
-    void updateLabel(const QString& name)
+    RectI geometry() const
+    {
+        return RectI{qRound(pos().x()), qRound(pos().y()), qRound(rect().width()), qRound(rect().height())};
+    }
+
+    void setGeometry(const RectI& r)
+    {
+        prepareGeometryChange();
+        setPos(r.x, r.y);
+        setRect(0, 0, r.w, r.h);
+        updateLabel();
+    }
+
+    void updateLabel()
     {
         if (!m_label)
             return;
-        const QPoint p = pos().toPoint();
-        m_label->setText(QStringLiteral("%1\n%2, %3  %4×%5")
-                             .arg(name)
-                             .arg(p.x())
-                             .arg(p.y())
-                             .arg(qRound(rect().width()))
-                             .arg(qRound(rect().height())));
+        const RectI g = geometry();
+        m_label->setText(QStringLiteral("%1\n%2, %3  %4×%5").arg(m_name).arg(g.x).arg(g.y).arg(g.w).arg(g.h));
     }
-
-    void setName(const QString& name) { m_name = name; }
 
     void paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget*) override
     {
@@ -75,33 +104,113 @@ public:
         pen.setWidth(isSelected() ? 2 : 1);
         painter->setPen(pen);
         painter->drawRect(rect());
+
+        // 선택된 영역: 8개 조절점 (화면 기준 크기)
+        if (isSelected()) {
+            // 화면 기준 4px (확대/축소와 무관)
+            const double hs = 4.0 / std::max(1e-6, painter->worldTransform().m11());
+            const QRectF r = rect();
+            const QPointF points[] = {r.topLeft(),    QPointF(r.center().x(), r.top()),    r.topRight(),
+                                      QPointF(r.right(), r.center().y()), r.bottomRight(),
+                                      QPointF(r.center().x(), r.bottom()), r.bottomLeft(),
+                                      QPointF(r.left(), r.center().y())};
+            painter->setBrush(QColor(255, 255, 255));
+            QPen hp(QColor(40, 40, 40));
+            hp.setCosmetic(true);
+            painter->setPen(hp);
+            for (const QPointF& p : points)
+                painter->drawRect(QRectF(p.x() - hs, p.y() - hs, hs * 2, hs * 2));
+        }
     }
 
 protected:
-    QVariant itemChange(GraphicsItemChange change, const QVariant& value) override
+    // 마우스 위치가 어느 테두리 근처인지 (0 = 안쪽: 이동)
+    int hitEdges(const QPointF& local) const
     {
-        if (change == ItemPositionChange) {
-            const QPointF p = value.toPointF();
-            return QPointF(std::round(p.x()), std::round(p.y()));
-        }
-        if (change == ItemPositionHasChanged)
-            updateLabel(m_name);
-        return QGraphicsRectItem::itemChange(change, value);
+        const double viewScale = std::max(1e-6, m_view->transform().m11());
+        const double t = std::min(kHandleScreenPx / viewScale, std::min(rect().width(), rect().height()) / 3.0);
+        int edges = 0;
+        if (local.x() <= t)
+            edges |= SnapLeft;
+        else if (local.x() >= rect().width() - t)
+            edges |= SnapRight;
+        if (local.y() <= t)
+            edges |= SnapTop;
+        else if (local.y() >= rect().height() - t)
+            edges |= SnapBottom;
+        return edges;
+    }
+
+    void hoverMoveEvent(QGraphicsSceneHoverEvent* event) override
+    {
+        const int edges = hitEdges(event->pos());
+        setCursor(cursorFor(edges, edges == 0));
+        QGraphicsRectItem::hoverMoveEvent(event);
     }
 
     void mousePressEvent(QGraphicsSceneMouseEvent* event) override
     {
-        m_pressPos = pos();
-        QGraphicsRectItem::mousePressEvent(event);
-        if (event->button() == Qt::LeftButton)
-            m_view->regionPressed(m_id);
+        if (event->button() != Qt::LeftButton) {
+            event->ignore();
+            return;
+        }
+        m_edges = hitEdges(event->pos());
+        m_dragging = true;
+        m_pressScene = event->scenePos();
+        m_start = geometry();
+        m_view->regionPressed(m_id);
+        setSelected(true);
+        event->accept();
+    }
+
+    void mouseMoveEvent(QGraphicsSceneMouseEvent* event) override
+    {
+        if (!m_dragging)
+            return;
+        const QPointF d = event->scenePos() - m_pressScene;
+        const bool move = m_edges == 0;
+
+        RectF r{double(m_start.x), double(m_start.y), double(m_start.w), double(m_start.h)};
+        if (move) {
+            r.x += d.x();
+            r.y += d.y();
+        } else {
+            if (m_edges & SnapLeft) {
+                r.x += d.x();
+                r.w -= d.x();
+            }
+            if (m_edges & SnapRight)
+                r.w += d.x();
+            if (m_edges & SnapTop) {
+                r.y += d.y();
+                r.h -= d.y();
+            }
+            if (m_edges & SnapBottom)
+                r.h += d.y();
+        }
+
+        // 자석: Alt를 누르고 있으면 일시 해제
+        const bool snap = m_view->snapEnabled() && !(event->modifiers() & Qt::AltModifier);
+        std::vector<double> xs;
+        std::vector<double> ys;
+        if (snap)
+            m_view->snapTargets(m_id, xs, ys);
+        const SnapResult result = snapRect(r, move, m_edges, xs, ys, snap ? m_view->snapThreshold() : 0.0);
+        setGeometry(result.rect);
+        m_view->showGuides(result.snappedX, result.guideX, result.snappedY, result.guideY);
+        event->accept();
     }
 
     void mouseReleaseEvent(QGraphicsSceneMouseEvent* event) override
     {
-        QGraphicsRectItem::mouseReleaseEvent(event);
-        if (pos() != m_pressPos)
-            m_view->regionDragFinished(m_id, pos().toPoint());
+        if (!m_dragging)
+            return;
+        m_dragging = false;
+        m_view->hideGuides();
+        const RectI g = geometry();
+        if (g != m_start)
+            m_view->regionGeometryFinished(m_id, g);
+        event->accept();
     }
 
 private:
@@ -109,8 +218,11 @@ private:
     QString m_id;
     QString m_name;
     QColor m_color;
-    QPointF m_pressPos;
     QGraphicsSimpleTextItem* m_label = nullptr;
+    bool m_dragging = false;
+    int m_edges = 0;
+    QPointF m_pressScene;
+    RectI m_start;
 };
 
 CanvasView::CanvasView(ProjectController* controller, QWidget* parent)
@@ -127,6 +239,9 @@ CanvasView::CanvasView(ProjectController* controller, QWidget* parent)
     setDragMode(QGraphicsView::NoDrag);
     setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
     setFrameShape(QFrame::NoFrame);
+    setFocusPolicy(Qt::StrongFocus); // 방향키 조작
+
+    m_snapEnabled = QSettings().value(QStringLiteral("snapEnabled"), true).toBool();
 
     m_rebuildTimer.setSingleShot(true);
     m_rebuildTimer.setInterval(0);
@@ -144,6 +259,12 @@ CanvasView::CanvasView(ProjectController* controller, QWidget* parent)
     scheduleRebuild();
 }
 
+void CanvasView::setSnapEnabled(bool enabled)
+{
+    m_snapEnabled = enabled;
+    QSettings().setValue(QStringLiteral("snapEnabled"), enabled);
+}
+
 void CanvasView::scheduleRebuild()
 {
     // 마우스 이벤트 처리 중 항목이 삭제되지 않도록 이벤트 루프로 미룸
@@ -153,6 +274,8 @@ void CanvasView::scheduleRebuild()
 void CanvasView::rebuild()
 {
     const Project& project = m_controller->project();
+    m_guideX = nullptr;
+    m_guideY = nullptr;
     m_scene->clear();
     m_regionItems.clear();
 
@@ -176,8 +299,6 @@ void CanvasView::rebuild()
         const QString id = QString::fromStdString(r.id);
         const QColor color = kRegionColors[colorIndex++ % int(std::size(kRegionColors))];
         auto* item = new RegionItem(this, id, color);
-        item->setRect(0, 0, r.rect.w, r.rect.h);
-        item->setPos(r.rect.x, r.rect.y);
         item->setZValue(colorIndex);
         item->setOpacity(r.visible ? 1.0 : 0.35);
         auto* label = makeLabel(item, QString(), QColor(240, 240, 240));
@@ -185,7 +306,7 @@ void CanvasView::rebuild()
         label->setTransform(QTransform::fromTranslate(4, 3)); // 테두리와 겹치지 않게 화면 기준 4px 띄움
         item->setLabel(label);
         item->setName(QString::fromStdString(r.name));
-        item->updateLabel(QString::fromStdString(r.name));
+        item->setGeometry(r.rect);
         m_scene->addItem(item);
         m_regionItems.insert(id, item);
         bounds = bounds.united(QRectF(r.rect.x, r.rect.y, r.rect.w, r.rect.h));
@@ -215,9 +336,20 @@ void CanvasView::rebuild()
         auto* label = makeLabel(item, text, pen.color());
         label->setPos(rect.topLeft());
         label->setZValue(1001);
-        // 라벨을 출력 범위 위쪽 바깥에 표시
         label->setTransform(QTransform::fromTranslate(0, -label->boundingRect().height() - 2));
         bounds = bounds.united(rect);
+    }
+
+    // 자석 안내선 (드래그 중에만 표시)
+    QPen guidePen(kGuideColor);
+    guidePen.setCosmetic(true);
+    guidePen.setStyle(Qt::DashLine);
+    m_guideX = m_scene->addLine(QLineF(), guidePen);
+    m_guideY = m_scene->addLine(QLineF(), guidePen);
+    for (QGraphicsLineItem* g : {m_guideX, m_guideY}) {
+        g->setZValue(2000);
+        g->setAcceptedMouseButtons(Qt::NoButton);
+        g->setVisible(false);
     }
 
     const double margin = std::max(bounds.width(), bounds.height()) * 0.05 + 50.0;
@@ -241,17 +373,59 @@ void CanvasView::applySelection(const QString& id)
 void CanvasView::regionPressed(const QString& id)
 {
     m_controller->selectRegion(id);
+    applySelection(id);
 }
 
-void CanvasView::regionDragFinished(const QString& id, const QPoint& position)
+void CanvasView::regionGeometryFinished(const QString& id, const RectI& rect)
 {
     const Region* r = m_controller->project().findRegion(id.toStdString());
     if (!r)
         return;
     Region updated = *r;
-    updated.rect.x = position.x();
-    updated.rect.y = position.y();
+    updated.rect = rect;
     m_controller->updateRegion(updated);
+}
+
+void CanvasView::snapTargets(const QString& excludeId, std::vector<double>& xs, std::vector<double>& ys) const
+{
+    const Project& p = m_controller->project();
+    auto add = [&](const RectI& r) {
+        xs.push_back(r.x);
+        xs.push_back(r.right());
+        ys.push_back(r.y);
+        ys.push_back(r.bottom());
+    };
+    add(RectI{0, 0, p.canvas.width, p.canvas.height});
+    for (const OutputConfig& o : p.outputs)
+        add(o.canvasRect);
+    for (const Region& r : p.regions)
+        if (QString::fromStdString(r.id) != excludeId)
+            add(r.rect);
+}
+
+double CanvasView::snapThreshold() const
+{
+    return kSnapScreenPx / std::max(1e-6, transform().m11());
+}
+
+void CanvasView::showGuides(bool showX, double x, bool showY, double y)
+{
+    const QRectF area = m_scene->sceneRect();
+    if (m_guideX) {
+        m_guideX->setVisible(showX);
+        if (showX)
+            m_guideX->setLine(x, area.top(), x, area.bottom());
+    }
+    if (m_guideY) {
+        m_guideY->setVisible(showY);
+        if (showY)
+            m_guideY->setLine(area.left(), y, area.right(), y);
+    }
+}
+
+void CanvasView::hideGuides()
+{
+    showGuides(false, 0.0, false, 0.0);
 }
 
 void CanvasView::fitCanvas()
@@ -264,11 +438,42 @@ void CanvasView::fitCanvas()
     fitInView(rect.adjusted(-margin, -margin, margin, margin), Qt::KeepAspectRatio);
 }
 
+void CanvasView::keyPressEvent(QKeyEvent* event)
+{
+    const Region* r = m_controller->project().findRegion(m_controller->selectedRegionId().toStdString());
+    int dx = 0;
+    int dy = 0;
+    switch (event->key()) {
+    case Qt::Key_Left: dx = -1; break;
+    case Qt::Key_Right: dx = 1; break;
+    case Qt::Key_Up: dy = -1; break;
+    case Qt::Key_Down: dy = 1; break;
+    default:
+        QGraphicsView::keyPressEvent(event);
+        return;
+    }
+    if (!r) {
+        event->ignore();
+        return;
+    }
+    const int step = (event->modifiers() & Qt::ShiftModifier) ? 10 : 1;
+    Region updated = *r;
+    if (event->modifiers() & Qt::ControlModifier) {
+        // Ctrl+방향키: 오른쪽/아래 테두리로 크기 변경
+        updated.rect.w = std::max(1, updated.rect.w + dx * step);
+        updated.rect.h = std::max(1, updated.rect.h + dy * step);
+    } else {
+        updated.rect.x += dx * step;
+        updated.rect.y += dy * step;
+    }
+    m_controller->updateRegion(updated);
+    event->accept();
+}
+
 void CanvasView::wheelEvent(QWheelEvent* event)
 {
     const double factor = event->angleDelta().y() > 0 ? 1.15 : 1.0 / 1.15;
-    const double current = transform().m11();
-    const double next = current * factor;
+    const double next = transform().m11() * factor;
     if (next < 0.002 || next > 40.0)
         return;
     scale(factor, factor);
@@ -277,6 +482,7 @@ void CanvasView::wheelEvent(QWheelEvent* event)
 
 void CanvasView::mousePressEvent(QMouseEvent* event)
 {
+    setFocus();
     if (event->button() == Qt::MiddleButton) {
         m_panning = true;
         m_panStart = event->pos();
@@ -285,7 +491,7 @@ void CanvasView::mousePressEvent(QMouseEvent* event)
         return;
     }
     QGraphicsView::mousePressEvent(event);
-    // 빈 곳 클릭 시 선택 해제하지 않고 유지 (속성 창이 비지 않도록)
+    // 빈 곳 클릭 시 선택을 유지 (속성 창이 비지 않도록)
     if (event->button() == Qt::LeftButton && !itemAt(event->pos()))
         applySelection(m_controller->selectedRegionId());
 }

@@ -162,4 +162,24 @@ QIcon schedule()
     });
 }
 
+QIcon magnet()
+{
+    return make([](QPainter& p, const QColor& c) {
+        // 말굽 자석
+        QPen body(c, 4.0, Qt::SolidLine, Qt::FlatCap, Qt::RoundJoin);
+        p.setPen(body);
+        p.setBrush(Qt::NoBrush);
+        QPainterPath path;
+        path.moveTo(6, 4);
+        path.lineTo(6, 12);
+        path.arcTo(QRectF(6, 6, 12, 12), 180, 180);
+        path.lineTo(18, 4);
+        p.drawPath(path);
+        const QColor tip = c == kDisabled ? kDisabled : QColor(235, 95, 95);
+        p.setPen(QPen(tip, 4.0, Qt::SolidLine, Qt::FlatCap));
+        p.drawLine(QPointF(6, 3), QPointF(6, 7));
+        p.drawLine(QPointF(18, 3), QPointF(18, 7));
+    });
+}
+
 } // namespace led::icons

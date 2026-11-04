@@ -185,6 +185,13 @@ void MainWindow::createActions()
     m_testPatternAction->setToolTip(QStringLiteral("테스트 패턴 (F7): 출력마다 격자, 좌표, 영역 위치 표시\n끌 수 없으면 Ctrl+Alt+F12"));
     connect(m_testPatternAction, &QAction::toggled, this, &MainWindow::setTestPattern);
 
+    auto* snapAction = new QAction(icons::magnet(), QStringLiteral("자석"), this);
+    snapAction->setCheckable(true);
+    snapAction->setChecked(m_canvasView->snapEnabled());
+    snapAction->setToolTip(QStringLiteral("자석: 영역을 옮기거나 크기를 바꿀 때 캔버스/출력/다른 영역 테두리에 붙음\n"
+                                          "드래그 중 Alt를 누르고 있으면 일시 해제"));
+    connect(snapAction, &QAction::toggled, m_canvasView, &CanvasView::setSnapEnabled);
+
     auto* fitAction = new QAction(icons::fit(), QStringLiteral("화면 맞춤"), this);
     fitAction->setShortcut(QKeySequence(Qt::Key_F));
     connect(fitAction, &QAction::triggered, m_canvasView, &CanvasView::fitCanvas);
@@ -218,6 +225,7 @@ void MainWindow::createActions()
 
     QMenu* viewMenu = menuBar()->addMenu(QStringLiteral("보기"));
     viewMenu->addAction(fitAction);
+    viewMenu->addAction(snapAction);
     for (QDockWidget* dock : findChildren<QDockWidget*>())
         viewMenu->addAction(dock->toggleViewAction());
 
@@ -237,6 +245,7 @@ void MainWindow::createActions()
     toolbar->addAction(m_outputAction);
     toolbar->addAction(m_testPatternAction);
     toolbar->addSeparator();
+    toolbar->addAction(snapAction);
     toolbar->addAction(fitAction);
 }
 

@@ -32,6 +32,7 @@ add_library(led_core STATIC
     src/core/Project.cpp
     src/core/ScheduleLogic.cpp
     src/core/TickerMotion.cpp
+    src/core/Snap.cpp
     src/core/Log.cpp)
 target_include_directories(led_core PUBLIC "${SRC}")
 

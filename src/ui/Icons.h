@@ -15,5 +15,6 @@ QIcon output();
 QIcon testPattern();
 QIcon fit();
 QIcon schedule();
+QIcon magnet();
 
 } // namespace led::icons
