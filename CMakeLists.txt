@@ -105,6 +105,7 @@ add_executable(gsj_led_player
     src/ui/CanvasPanel.cpp
     src/ui/LogPanel.cpp
     src/ui/ColorButton.cpp
+    src/ui/EmergencyHotkey.cpp
     src/ui/PlaylistEditor.cpp
     src/ui/TickerEditor.cpp
     src/ui/ContentEditor.cpp

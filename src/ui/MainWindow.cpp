@@ -1,11 +1,13 @@
 #include "ui/MainWindow.h"
 
 #include "core/Log.h"
+#include "display/DisplayInfo.h"
 #include "output/OutputManager.h"
 #include "playback/PlaybackEngine.h"
 #include "schedule/ScheduleRunner.h"
 #include "ui/CanvasPanel.h"
 #include "ui/CanvasView.h"
+#include "ui/EmergencyHotkey.h"
 #include "ui/Icons.h"
 #include "ui/LogPanel.h"
 #include "ui/OutputPanel.h"
@@ -16,6 +18,7 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QCheckBox>
 #include <QCloseEvent>
 #include <QDockWidget>
 #include <QFileDialog>
@@ -87,6 +90,10 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_schedule, &ScheduleRunner::statusChanged, this, &MainWindow::updateStatus);
     connect(m_scenePanel, &ScenePanel::playSceneRequested, this, &MainWindow::playScene);
     m_schedulePanel->setStatusText(QString());
+
+    // 출력 화면이 편집 화면을 가려도 쓸 수 있는 비상 단축키
+    m_hotkey = new EmergencyHotkey(this, this);
+    connect(m_hotkey, &EmergencyHotkey::triggered, this, &MainWindow::emergencyStop);
 
     updateTitle();
     updateStatus();
@@ -169,18 +176,21 @@ void MainWindow::createActions()
     m_outputAction = new QAction(icons::output(), QStringLiteral("출력 켜기"), this);
     m_outputAction->setCheckable(true);
     m_outputAction->setShortcut(QKeySequence(Qt::Key_F6));
-    m_outputAction->setToolTip(QStringLiteral("출력 켜기/끄기 (F6)"));
+    m_outputAction->setToolTip(QStringLiteral("출력 켜기/끄기 (F6)\n출력 화면에 가려 조작할 수 없으면 Ctrl+Alt+F12"));
     connect(m_outputAction, &QAction::toggled, this, &MainWindow::setOutputsEnabled);
 
     m_testPatternAction = new QAction(icons::testPattern(), QStringLiteral("테스트 패턴"), this);
     m_testPatternAction->setCheckable(true);
     m_testPatternAction->setShortcut(QKeySequence(Qt::Key_F7));
-    m_testPatternAction->setToolTip(QStringLiteral("테스트 패턴 (F7): 출력마다 격자, 좌표, 영역 위치 표시"));
+    m_testPatternAction->setToolTip(QStringLiteral("테스트 패턴 (F7): 출력마다 격자, 좌표, 영역 위치 표시\n끌 수 없으면 Ctrl+Alt+F12"));
     connect(m_testPatternAction, &QAction::toggled, this, &MainWindow::setTestPattern);
 
     auto* fitAction = new QAction(icons::fit(), QStringLiteral("화면 맞춤"), this);
     fitAction->setShortcut(QKeySequence(Qt::Key_F));
     connect(fitAction, &QAction::triggered, m_canvasView, &CanvasView::fitCanvas);
+
+    auto* emergencyAction = new QAction(QStringLiteral("모든 출력 끄기 (비상: Ctrl+Alt+F12)"), this);
+    connect(emergencyAction, &QAction::triggered, this, &MainWindow::emergencyStop);
 
     auto* refreshDisplaysAction = new QAction(QStringLiteral("디스플레이 다시 찾기"), this);
     connect(refreshDisplaysAction, &QAction::triggered, m_outputPanel, &OutputPanel::refreshDisplays);
@@ -202,6 +212,7 @@ void MainWindow::createActions()
     QMenu* outputMenu = menuBar()->addMenu(QStringLiteral("출력"));
     outputMenu->addAction(m_outputAction);
     outputMenu->addAction(m_testPatternAction);
+    outputMenu->addAction(emergencyAction);
     outputMenu->addSeparator();
     outputMenu->addAction(refreshDisplaysAction);
 
@@ -420,8 +431,56 @@ void MainWindow::setOutputsEnabled(bool enabled)
     updateStatus();
 }
 
+void MainWindow::warnIfPrimaryOutput()
+{
+    if (m_primaryWarningShown)
+        return;
+    QSettings settings;
+    if (settings.value(QStringLiteral("hidePrimaryOutputWarning"), false).toBool())
+        return;
+    const std::vector<DisplayInfo> displays = enumerateDisplays();
+    bool onPrimary = false;
+    for (const OutputConfig& o : m_controller->project().outputs) {
+        const DisplayInfo* d = findDisplay(displays, o.displayId);
+        if (o.enabled && d && d->primary)
+            onPrimary = true;
+    }
+    if (!onPrimary)
+        return;
+    m_primaryWarningShown = true;
+
+    QMessageBox box(this);
+    box.setIcon(QMessageBox::Information);
+    box.setWindowTitle(QStringLiteral("주 모니터 출력"));
+    box.setText(QStringLiteral("편집 화면이 있는 주 모니터에도 출력합니다.\n"
+                               "출력 화면이 편집 화면을 가리면 아래 방법으로 끌 수 있습니다."));
+    box.setInformativeText(QStringLiteral("• Ctrl+Alt+F12 : 모든 출력과 테스트 패턴 끄기 (어느 화면에서나 동작)\n"
+                                          "• Alt+Tab 으로 편집 화면으로 돌아가 F6 (출력 끄기) / F7 (테스트 패턴)"));
+    auto* dontShow = new QCheckBox(QStringLiteral("다시 보지 않기"), &box);
+    box.setCheckBox(dontShow);
+    box.exec();
+    if (dontShow->isChecked())
+        settings.setValue(QStringLiteral("hidePrimaryOutputWarning"), true);
+}
+
+void MainWindow::emergencyStop()
+{
+    logWarning("비상 단축키: 모든 출력과 테스트 패턴을 끕니다");
+    setCheckedSilently(m_testPatternAction, false);
+    m_outputs->setTestPattern(false, m_controller->project());
+    m_outputs->stop();
+    setCheckedSilently(m_outputAction, false);
+    // 편집 화면을 앞으로
+    showNormal();
+    raise();
+    activateWindow();
+    updateStatus();
+}
+
 void MainWindow::startOutputs(bool showDialog)
 {
+    if (showDialog)
+        warnIfPrimaryOutput();
     QStringList errors;
     m_outputs->start(m_controller->project(), errors);
     if (!errors.isEmpty())

@@ -15,6 +15,7 @@ class QLabel;
 namespace led {
 
 class CanvasView;
+class EmergencyHotkey;
 class LogPanel;
 class OutputManager;
 class OutputPanel;
@@ -58,6 +59,7 @@ private slots:
     void restartOutputs();
     void updateTitle();
     void updateStatus();
+    void emergencyStop();
 
 private:
     void createActions();
@@ -68,6 +70,7 @@ private:
     void startOutputs(bool showDialog = true);
     void rememberProject(const QString& path);
     void startScene(const QString& sceneId, bool showDialog);
+    void warnIfPrimaryOutput();
 
     ProjectController* m_controller;
     std::unique_ptr<PlaybackEngine> m_engine;
@@ -86,6 +89,8 @@ private:
     QAction* m_scheduleAction = nullptr;
     QLabel* m_statusLabel = nullptr;
     QTimer m_outputRestartTimer;
+    EmergencyHotkey* m_hotkey = nullptr;
+    bool m_primaryWarningShown = false;
 };
 
 } // namespace led

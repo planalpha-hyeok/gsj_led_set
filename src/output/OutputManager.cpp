@@ -43,6 +43,9 @@ void OutputManager::start(const Project& project, QStringList& errors)
         spec.windowX = display->x + oc.offsetX;
         spec.windowY = display->y + oc.offsetY;
         spec.canvasRect = oc.canvasRect;
+        // 주 모니터(편집 화면이 있는 화면)에서는 항상 위 표시를 하지 않음
+        // -> Alt+Tab, 작업 관리자로 편집 화면에 돌아갈 수 있음
+        spec.topmost = !display->primary;
 
         auto window = createOutputWindow();
         std::string error;
