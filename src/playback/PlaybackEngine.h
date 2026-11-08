@@ -39,6 +39,9 @@ public:
 
     void stop();
     bool isPlaying() const;
+
+    // 플레이리스트 다음(+1)/이전(-1) 항목. 해당 영역이 재생 중인 플레이리스트가 아니면 false
+    bool skip(const std::string& regionId, int delta);
     std::string sceneId() const;
 
     // 출력 화면 갱신 시점이 6ms 이내로 가까운 출력들은 같은 계산 결과(같은 프레임)를 공유

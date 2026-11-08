@@ -80,7 +80,12 @@ QJsonObject contentToJson(const RegionContent& c)
     for (const auto& it : c.items) {
         QJsonObject i;
         i["id"] = qs(it.id);
+        i["type"] = it.type == ItemType::Live ? QStringLiteral("live") : QStringLiteral("file");
         i["source"] = qs(it.source);
+        if (it.type == ItemType::Live) {
+            i["liveSize"] = qs(it.liveSize);
+            i["liveFps"] = it.liveFps;
+        }
         i["duration"] = it.duration;
         i["transition"] = QString::fromLatin1(transitionKey(it.transition));
         i["transitionDuration"] = it.transitionDuration;
@@ -91,7 +96,65 @@ QJsonObject contentToJson(const RegionContent& c)
     return o;
 }
 
+QJsonObject interactiveToJson(const InteractiveConfig& c)
+{
+    QJsonObject o;
+    o["udpEnabled"] = c.udpEnabled;
+    o["udpPort"] = c.udpPort;
+    o["tcpEnabled"] = c.tcpEnabled;
+    o["tcpPort"] = c.tcpPort;
+    o["oscEnabled"] = c.oscEnabled;
+    o["oscPort"] = c.oscPort;
+    o["serialEnabled"] = c.serialEnabled;
+    o["serialPort"] = qs(c.serialPort);
+    o["serialBaud"] = c.serialBaud;
+    o["midiEnabled"] = c.midiEnabled;
+    o["midiDevice"] = qs(c.midiDevice);
+    o["touchEnabled"] = c.touchEnabled;
+    QJsonArray mappings;
+    for (const auto& m : c.mappings) {
+        QJsonObject mo;
+        mo["trigger"] = qs(m.trigger);
+        mo["command"] = qs(m.command);
+        mappings.append(mo);
+    }
+    o["mappings"] = mappings;
+    return o;
+}
+
 // ---------------------------------------------------------------- 불러오기
+
+int portValue(const QJsonObject& o, const char* key, int fallback)
+{
+    const int v = o.value(key).toInt(fallback);
+    return v >= 1 && v <= 65535 ? v : fallback;
+}
+
+InteractiveConfig interactiveFromJson(const QJsonObject& o)
+{
+    InteractiveConfig c;
+    c.udpEnabled = o.value("udpEnabled").toBool(false);
+    c.udpPort = portValue(o, "udpPort", c.udpPort);
+    c.tcpEnabled = o.value("tcpEnabled").toBool(false);
+    c.tcpPort = portValue(o, "tcpPort", c.tcpPort);
+    c.oscEnabled = o.value("oscEnabled").toBool(false);
+    c.oscPort = portValue(o, "oscPort", c.oscPort);
+    c.serialEnabled = o.value("serialEnabled").toBool(false);
+    c.serialPort = ss(o.value("serialPort").toString());
+    c.serialBaud = std::clamp(o.value("serialBaud").toInt(c.serialBaud), 300, 4000000);
+    c.midiEnabled = o.value("midiEnabled").toBool(false);
+    c.midiDevice = ss(o.value("midiDevice").toString());
+    c.touchEnabled = o.value("touchEnabled").toBool(false);
+    for (const QJsonValue& v : o.value("mappings").toArray()) {
+        const QJsonObject mo = v.toObject();
+        TriggerMapping m;
+        m.trigger = ss(mo.value("trigger").toString().trimmed());
+        m.command = ss(mo.value("command").toString().trimmed());
+        if (!m.trigger.empty())
+            c.mappings.push_back(std::move(m));
+    }
+    return c;
+}
 
 TickerConfig tickerFromJson(const QJsonObject& o)
 {
@@ -130,7 +193,10 @@ RegionContent contentFromJson(const QJsonObject& o)
         item.id = ss(i.value("id").toString());
         if (item.id.empty())
             item.id = generateId();
+        item.type = i.value("type").toString() == QLatin1String("live") ? ItemType::Live : ItemType::File;
         item.source = ss(i.value("source").toString());
+        item.liveSize = ss(i.value("liveSize").toString());
+        item.liveFps = std::clamp(i.value("liveFps").toDouble(0.0), 0.0, 1000.0);
         item.duration = std::max(0.0, i.value("duration").toDouble(0.0));
         TransitionType t;
         if (transitionFromKey(ss(i.value("transition").toString()), t))
@@ -283,6 +349,7 @@ QByteArray projectToJson(const Project& project)
     root["outputs"] = outputs;
     root["autoStart"] = project.autoStart;
     root["hardwareDecoding"] = project.hardwareDecoding;
+    root["interactive"] = interactiveToJson(project.interactive);
 
     return QJsonDocument(root).toJson(QJsonDocument::Indented);
 }
@@ -353,6 +420,7 @@ bool projectFromJson(const QByteArray& json, Project& out, QString* error)
         }
         p.autoStart = root.value("autoStart").toBool(false);
         p.hardwareDecoding = root.value("hardwareDecoding").toBool(true);
+        p.interactive = interactiveFromJson(root.value("interactive").toObject());
     }
 
     for (const QJsonValue& v : root.value("outputs").toArray()) {

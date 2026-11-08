@@ -9,6 +9,7 @@
 #include "ui/CanvasView.h"
 #include "ui/EmergencyHotkey.h"
 #include "ui/Icons.h"
+#include "ui/InteractivePanel.h"
 #include "ui/LogPanel.h"
 #include "ui/OutputPanel.h"
 #include "ui/ProjectController.h"
@@ -93,6 +94,8 @@ MainWindow::MainWindow(QWidget* parent)
     m_schedulePanel->setStatusText(QString());
 
     // 출력 화면이 편집 화면을 가려도 쓸 수 있는 비상 단축키
+    setupInteractive();
+
     m_hotkey = new EmergencyHotkey(this, this);
     connect(m_hotkey, &EmergencyHotkey::triggered, this, &MainWindow::emergencyStop);
 
@@ -119,6 +122,8 @@ void MainWindow::createDocks()
     m_outputPanel = new OutputPanel(m_controller, tabs);
     tabs->addTab(m_outputPanel, QStringLiteral("출력"));
     tabs->addTab(new CanvasPanel(m_controller, tabs), QStringLiteral("캔버스"));
+    m_interactivePanel = new InteractivePanel(m_controller, tabs);
+    tabs->addTab(m_interactivePanel, QStringLiteral("인터랙티브"));
 
     auto* propertiesDock = new QDockWidget(QStringLiteral("설정"), this);
     propertiesDock->setObjectName("propertiesDock");
@@ -354,7 +359,7 @@ void MainWindow::startScene(const QString& sceneId, bool showDialog)
 {
     std::vector<std::string> errors;
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    m_engine->play(m_controller->project(), sceneId.toStdString(), errors);
+    m_engine->play(playbackProject(), sceneId.toStdString(), errors);
     QApplication::restoreOverrideCursor();
     if (!errors.empty())
         reportErrors(QStringLiteral("일부 콘텐츠를 재생할 수 없음"), errors, showDialog);
@@ -527,7 +532,7 @@ void MainWindow::onPlaybackContentChanged()
 {
     if (m_engine->isPlaying()) {
         std::vector<std::string> errors;
-        m_engine->update(m_controller->project(), errors);
+        m_engine->update(playbackProject(), errors);
         if (!errors.empty())
             reportErrors(QStringLiteral("콘텐츠를 재생할 수 없음"), errors, !m_schedule->isActive());
     }

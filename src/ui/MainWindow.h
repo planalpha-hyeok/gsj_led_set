@@ -2,6 +2,9 @@
 
 // 메인 편집 창: 메뉴/도구모음, 캔버스 화면, 설정 패널, 기록을 배치하고 재생/출력/스케줄을 제어
 
+#include "core/Project.h"
+#include "playback/RuntimeOverrides.h"
+
 #include <QMainWindow>
 #include <QTimer>
 
@@ -16,6 +19,8 @@ namespace led {
 
 class CanvasView;
 class EmergencyHotkey;
+class InteractiveHub;
+class InteractivePanel;
 class LogPanel;
 class OutputManager;
 class OutputPanel;
@@ -61,6 +66,12 @@ private slots:
     void updateStatus();
     void emergencyStop();
 
+    // 인터랙티브 (MainWindowInteractive.cpp)
+    QString executeCommand(const QString& line, const QString& source);
+    void onTrigger(const QString& trigger, const QString& source);
+    void onCanvasClicked(int x, int y);
+    void applyInteractiveConfig();
+
 private:
     void createActions();
     void createDocks();
@@ -71,6 +82,10 @@ private:
     void rememberProject(const QString& path);
     void startScene(const QString& sceneId, bool showDialog);
     void warnIfPrimaryOutput();
+    void setupInteractive();
+    // 재생 엔진에 넘길 프로젝트 (외부 명령으로 바꾼 자막/표시 적용)
+    Project playbackProject() const;
+    void refreshPlaybackFromOverrides();
 
     ProjectController* m_controller;
     std::unique_ptr<PlaybackEngine> m_engine;
@@ -91,6 +106,13 @@ private:
     QTimer m_outputRestartTimer;
     EmergencyHotkey* m_hotkey = nullptr;
     bool m_primaryWarningShown = false;
+
+    InteractiveHub* m_hub = nullptr;
+    InteractivePanel* m_interactivePanel = nullptr;
+    RuntimeOverrides m_overrides;
+    InteractiveConfig m_appliedInteractive;
+    bool m_interactiveApplied = false;
+    int m_triggerDepth = 0;
 };
 
 } // namespace led

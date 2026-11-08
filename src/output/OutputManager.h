@@ -29,6 +29,10 @@ public:
     void setTestPattern(bool enabled, const Project& project);
     bool testPatternEnabled() const { return m_testPattern; }
 
+signals:
+    // 출력 화면 터치/클릭 (캔버스 좌표)
+    void canvasClicked(int x, int y);
+
 private:
     struct Running {
         std::string outputId;

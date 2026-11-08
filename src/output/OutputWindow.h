@@ -6,6 +6,7 @@
 #include "media/Frame.h"
 #include "render/Scene.h"
 
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -33,6 +34,10 @@ public:
 
     // 렌더링에 사용 중인 그래픽카드 이름
     virtual std::string adapterName() const = 0;
+
+    // 출력 화면 터치/클릭 (창 안 픽셀 좌표). start() 전에 설정. 렌더 스레드에서 호출될 수 있음
+    using ClickHandler = std::function<void(int x, int y)>;
+    virtual void setClickHandler(ClickHandler handler) = 0;
 };
 
 std::unique_ptr<OutputWindow> createOutputWindow();

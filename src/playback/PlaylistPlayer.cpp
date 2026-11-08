@@ -16,13 +16,15 @@ std::uint64_t nextRenderKey()
 
 namespace {
 
-std::shared_ptr<MediaSource> openSource(const std::string& path, bool loop, bool hardware, std::string& error)
+std::shared_ptr<MediaSource> openSource(const PlaylistItem& item, bool loop, bool hardware, std::string& error)
 {
-    if (path.empty()) {
-        error = "파일이 지정되지 않음";
+    if (item.source.empty()) {
+        error = item.type == ItemType::Live ? "입력 장치가 지정되지 않음" : "파일이 지정되지 않음";
         return nullptr;
     }
-    std::shared_ptr<MediaSource> source = createMediaSource(path, loop, hardware);
+    std::shared_ptr<MediaSource> source = item.type == ItemType::Live
+                                              ? createLiveSource(item.source, item.liveSize, item.liveFps)
+                                              : createMediaSource(item.source, loop, hardware);
     if (!source->open(error)) {
         source->stop();
         return nullptr;
@@ -90,14 +92,14 @@ void PlaylistPlayer::startPreload(std::size_t index)
 {
     m_preloadIndex = index;
     m_preloading = true;
-    const std::string path = m_content.items[index].source;
+    const PlaylistItem item = m_content.items[index];
     const bool loop = sourceLoops(index);
     const bool hardware = m_hardware;
-    m_preload = std::async(std::launch::async, [path, loop, hardware]() -> std::shared_ptr<MediaSource> {
+    m_preload = std::async(std::launch::async, [item, loop, hardware]() -> std::shared_ptr<MediaSource> {
         std::string error;
-        std::shared_ptr<MediaSource> source = openSource(path, loop, hardware, error);
+        std::shared_ptr<MediaSource> source = openSource(item, loop, hardware, error);
         if (!source)
-            logError("플레이리스트 항목을 열 수 없음: " + error + " [" + path + "]");
+            logError("플레이리스트 항목을 열 수 없음: " + error + " [" + item.source + "]");
         return source;
     });
 }
@@ -107,7 +109,7 @@ bool PlaylistPlayer::prepare(std::vector<std::string>& errors)
     const std::size_t n = m_content.items.size();
     for (std::size_t i = 0; i < n; ++i) {
         std::string error;
-        std::shared_ptr<MediaSource> source = openSource(m_content.items[i].source, sourceLoops(i), m_hardware, error);
+        std::shared_ptr<MediaSource> source = openSource(m_content.items[i], sourceLoops(i), m_hardware, error);
         if (!source) {
             errors.push_back(error + " [" + m_content.items[i].source + "]");
             continue;
@@ -144,6 +146,21 @@ void PlaylistPlayer::start(PlaybackClock::time_point startTime)
     m_current->fadeSeconds = 0.0;
 }
 
+void PlaylistPlayer::requestSkip(int delta)
+{
+    m_skipRequest += delta;
+}
+
+void PlaylistPlayer::cancelPreload()
+{
+    if (m_preloading && m_preload.valid()) {
+        std::shared_ptr<MediaSource> pending = m_preload.get();
+        if (pending)
+            pending->stop();
+    }
+    m_preloading = false;
+}
+
 void PlaylistPlayer::tick(PlaybackClock::time_point now)
 {
     if (!m_current)
@@ -154,27 +171,49 @@ void PlaylistPlayer::tick(PlaybackClock::time_point now)
         m_outgoing->source->stop();
         m_outgoing.reset();
     }
-    if (m_static || m_outgoing)
+
+    // 외부 명령(다음/이전): 목표 항목을 열고 준비되는 즉시 전환
+    if (m_skipRequest != 0 && !m_outgoing && !m_content.items.empty()) {
+        const int n = static_cast<int>(m_content.items.size());
+        int target = (static_cast<int>(m_current->index) + m_skipRequest) % n;
+        if (target < 0)
+            target += n;
+        m_skipRequest = 0;
+        if (m_preloading && m_preloadIndex != static_cast<std::size_t>(target))
+            cancelPreload();
+        if (!m_preloading)
+            startPreload(static_cast<std::size_t>(target));
+        m_forcedSwitch = true;
+    }
+    if (m_outgoing)
         return;
 
-    const auto next = nextIndex(m_current->index);
-    if (!next)
-        return; // 반복 끔: 마지막 항목 유지
+    double fade = 0.0;
+    if (m_forcedSwitch) {
+        const PlaylistItem& upcoming = m_content.items[m_preloadIndex];
+        fade = upcoming.transition == TransitionType::Fade ? upcoming.transitionDuration : 0.0;
+    } else {
+        if (m_static)
+            return;
+        const auto next = nextIndex(m_current->index);
+        if (!next)
+            return; // 반복 끔: 마지막 항목 유지
 
-    const double planned = plannedDuration(*m_current);
-    if (planned < 0.0)
-        return; // 길이를 아직 모름: 영상 끝을 기다림
+        const double planned = plannedDuration(*m_current);
+        if (planned < 0.0)
+            return; // 길이를 아직 모름: 영상 끝을 기다림 (라이브는 계속)
 
-    const PlaylistItem& upcoming = m_content.items[m_preloading ? m_preloadIndex : *next];
-    double fade = upcoming.transition == TransitionType::Fade ? upcoming.transitionDuration : 0.0;
-    fade = std::clamp(fade, 0.0, planned / 2.0);
+        const PlaylistItem& upcoming = m_content.items[m_preloading ? m_preloadIndex : *next];
+        fade = upcoming.transition == TransitionType::Fade ? upcoming.transitionDuration : 0.0;
+        fade = std::clamp(fade, 0.0, planned / 2.0);
 
-    if (now < m_current->start + seconds(planned - fade))
-        return;
+        if (now < m_current->start + seconds(planned - fade))
+            return;
+        if (!m_preloading)
+            startPreload(*next);
+    }
 
-    if (!m_preloading)
-        startPreload(*next);
-    if (m_preload.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+    if (!m_preloading || m_preload.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
         return; // 아직 열리는 중 (현재 항목 유지)
 
     std::shared_ptr<MediaSource> source = m_preload.get();
@@ -182,6 +221,13 @@ void PlaylistPlayer::tick(PlaybackClock::time_point now)
     const std::size_t index = m_preloadIndex;
 
     if (!source) {
+        if (m_forcedSwitch) {
+            m_forcedSwitch = false; // 요청한 항목을 열 수 없음: 현재 항목 유지 (오류는 기록됨)
+            if (!m_static)
+                if (const auto following = nextIndex(m_current->index))
+                    startPreload(*following);
+            return;
+        }
         // 열기 실패: 다음 항목으로 건너뜀. 모든 항목이 실패하면 현재 화면 유지
         if (++m_failCount >= m_content.items.size()) {
             logError("플레이리스트의 모든 다음 항목을 열 수 없어 현재 항목을 유지합니다");
@@ -193,6 +239,7 @@ void PlaylistPlayer::tick(PlaybackClock::time_point now)
         return;
     }
     m_failCount = 0;
+    m_forcedSwitch = false;
 
     Run run;
     run.index = index;
@@ -208,18 +255,14 @@ void PlaylistPlayer::tick(PlaybackClock::time_point now)
         m_current->source->stop();
     m_current = std::move(run);
 
-    if (const auto following = nextIndex(index))
-        startPreload(*following);
+    if (!m_static)
+        if (const auto following = nextIndex(index))
+            startPreload(*following);
 }
 
 void PlaylistPlayer::stop()
 {
-    if (m_preloading && m_preload.valid()) {
-        std::shared_ptr<MediaSource> pending = m_preload.get();
-        if (pending)
-            pending->stop();
-    }
-    m_preloading = false;
+    cancelPreload();
     if (m_outgoing)
         m_outgoing->source->stop();
     if (m_current)

@@ -3,6 +3,8 @@
 #include "core/Log.h"
 #include "render/d3d11/D3D11Renderer.h"
 
+#include <windowsx.h>
+
 #include <chrono>
 #include <limits>
 #include <mutex>
@@ -58,6 +60,13 @@ LRESULT CALLBACK outputWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
         break;
     case WM_MOUSEACTIVATE:
         return MA_NOACTIVATE; // 클릭해도 편집 창의 포커스를 뺏지 않음
+    case WM_LBUTTONDOWN: {
+        // 터치도 기본적으로 마우스 클릭으로 전달됨
+        auto* self = reinterpret_cast<Win32OutputWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+        if (self)
+            self->notifyClick(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+        return 0;
+    }
     case WM_CLOSE:
         return 0;             // Alt+F4 등으로 닫히지 않게 함 (프로그램에서만 닫음)
     case WM_ERASEBKGND:
@@ -170,6 +179,7 @@ void Win32OutputWindow::threadMain(std::promise<std::string> initResult)
         initResult.set_value("출력 창 생성 실패 (오류 " + lastErrorText() + ")");
         return;
     }
+    SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
     // 정확한 물리 픽셀 위치/크기로 다시 지정
     SetWindowPos(hwnd, m_spec.topmost ? HWND_TOPMOST : HWND_TOP, m_spec.windowX, m_spec.windowY, width, height,
                  SWP_NOACTIVATE | SWP_SHOWWINDOW);

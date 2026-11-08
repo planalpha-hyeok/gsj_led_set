@@ -276,6 +276,49 @@ static void testSharedFrame(const std::string& red)
     CHECK(a.empty()); // 정지 후에는 공유 결과도 비움
 }
 
+static void testSkip(const std::string& red, const std::string& blue)
+{
+    // 외부 명령 다음/이전: 긴 재생 시간이어도 바로 전환
+    Project p = baseProject();
+    RegionContent c;
+    c.regionId = "r";
+    c.items = {item(red, 100.0), item(blue, 100.0)};
+    p.scenes[0].contents.push_back(c);
+    PlaybackEngine engine;
+    std::vector<std::string> errors;
+    engine.play(p, "s", errors);
+    CHECK(waitFor(engine, 200, [](const auto& l) { return singleColor(l, 'R'); }));
+    CHECK(engine.skip("r", +1));
+    CHECK(waitFor(engine, 1000, [](const auto& l) { return singleColor(l, 'B'); }));
+    CHECK(engine.skip("r", +1)); // 마지막에서 다음 -> 처음으로
+    CHECK(waitFor(engine, 1000, [](const auto& l) { return singleColor(l, 'R'); }));
+    CHECK(engine.skip("r", -1)); // 처음에서 이전 -> 마지막으로
+    CHECK(waitFor(engine, 1000, [](const auto& l) { return singleColor(l, 'B'); }));
+    CHECK(!engine.skip("없는영역", +1));
+    engine.stop();
+    CHECK(!engine.skip("r", +1));
+}
+
+static void testLivePlaylist()
+{
+    // 라이브 입력 항목 (시험 신호): 재생 시간 '자동'이면 계속 표시
+    Project p = baseProject();
+    RegionContent c;
+    c.regionId = "r";
+    PlaylistItem live;
+    live.id = "live";
+    live.type = ItemType::Live;
+    live.source = "lavfi:testsrc2=size=96x48:rate=30";
+    c.items = {live};
+    p.scenes[0].contents.push_back(c);
+    PlaybackEngine engine;
+    std::vector<std::string> errors;
+    engine.play(p, "s", errors);
+    CHECK(errors.empty());
+    CHECK(waitFor(engine, 1000, [](const auto& l) { return l.size() == 1 && l[0].frame->width == 96; }));
+    engine.stop();
+}
+
 static void testVideoEnd(const std::string& video, const std::string& blue)
 {
     // 자동 길이 영상(약 1초) 다음 항목으로 넘어가는지
@@ -313,6 +356,8 @@ int main(int argc, char* argv[])
     testLiveUpdate(red, blue);
     testTicker();
     testSharedFrame(red);
+    testSkip(red, blue);
+    testLivePlaylist();
     if (argc > 1)
         testVideoEnd(argv[1], blue);
     else

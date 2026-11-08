@@ -4,6 +4,7 @@
 
 extern "C" {
 #include <libavcodec/avcodec.h>
+#include <libavdevice/avdevice.h>
 #include <libavformat/avformat.h>
 #include <libavutil/avutil.h>
 #include <libavutil/hwcontext.h>
@@ -36,7 +37,10 @@ std::string ffmpegError(int code)
 void initFfmpegOnce()
 {
     static std::once_flag flag;
-    std::call_once(flag, [] { av_log_set_level(AV_LOG_ERROR); });
+    std::call_once(flag, [] {
+        av_log_set_level(AV_LOG_ERROR);
+        avdevice_register_all(); // 캡처보드/웹캠 입력
+    });
 }
 
 // 사용 중단된 yuvj* 포맷을 일반 포맷 + 풀레인지로 변환
@@ -123,6 +127,10 @@ struct VideoSource::Impl {
     std::string path;
     bool loop = true;
     bool hardware = false;           // 하드웨어 디코딩 요청
+    bool live = false;
+    std::string inputFormat;
+    std::string liveSize;
+    double liveFps = 0.0;
     AVPixelFormat hwPixelFormat = AV_PIX_FMT_NONE;
     std::string hwName;              // 사용 중인 하드웨어 종류 (비어 있으면 CPU)
     std::atomic<bool> hwFallback{false};
@@ -159,10 +167,22 @@ struct VideoSource::Impl {
     {
         if (sws)
             sws_freeContext(sws);
+        closeInput();
+    }
+
+    void closeInput()
+    {
         if (codec)
             avcodec_free_context(&codec);
         if (format)
             avformat_close_input(&format);
+        streamIndex = -1;
+    }
+
+    // 읽기 대기 중에도 정지 요청이 오면 즉시 빠져나오게 함 (라이브 장치가 응답하지 않을 때 대비)
+    static int interruptCallback(void* opaque)
+    {
+        return static_cast<Impl*>(opaque)->stopRequested.load() ? 1 : 0;
     }
 
     static AVPixelFormat chooseFormat(AVCodecContext* ctx, const AVPixelFormat* formats)
@@ -216,11 +236,51 @@ struct VideoSource::Impl {
     bool open(std::string& error)
     {
         initFfmpegOnce();
+        std::string decoderInfo;
+        if (!openInput(error, decoderInfo))
+            return false;
+        logInfo((live ? "라이브 입력 열기: " : "영상 열기: ") + path + " (" + decoderInfo + ")");
+        thread = std::thread([this] { run(); });
+        return true;
+    }
 
-        int r = avformat_open_input(&format, path.c_str(), nullptr, nullptr);
+    bool openInput(std::string& error, std::string& decoderInfo)
+    {
+        closeInput(); // 재연결 시 이전 상태 정리
+        format = avformat_alloc_context();
+        if (!format) {
+            error = "메모리 할당 실패";
+            return false;
+        }
+        format->interrupt_callback.callback = &Impl::interruptCallback;
+        format->interrupt_callback.opaque = this;
+
+        const AVInputFormat* inputFmt = nullptr;
+        std::string url = path;
+        AVDictionary* options = nullptr;
+        if (live) {
+            inputFmt = av_find_input_format(inputFormat.c_str());
+            if (!inputFmt) {
+                avformat_free_context(format);
+                format = nullptr;
+                error = "라이브 입력 방식을 지원하지 않음: " + inputFormat;
+                return false;
+            }
+            if (inputFormat == "dshow") {
+                url = "video=" + path;
+                av_dict_set(&options, "rtbufsize", "128M", 0);
+            }
+            if (!liveSize.empty())
+                av_dict_set(&options, "video_size", liveSize.c_str(), 0);
+            if (liveFps > 0.0)
+                av_dict_set(&options, "framerate", std::to_string(liveFps).c_str(), 0);
+        }
+
+        int r = avformat_open_input(&format, url.c_str(), inputFmt, &options);
+        av_dict_free(&options);
         if (r < 0) {
-            error = "파일을 열 수 없음 (" + ffmpegError(r) + ")";
-            format = nullptr;
+            error = std::string(live ? "입력 장치를 열 수 없음 (" : "파일을 열 수 없음 (") + ffmpegError(r) + ")";
+            format = nullptr; // 실패 시 FFmpeg가 해제함
             return false;
         }
         r = avformat_find_stream_info(format, nullptr);
@@ -250,7 +310,7 @@ struct VideoSource::Impl {
             error = "디코더 설정 실패 (" + ffmpegError(r) + ")";
             return false;
         }
-        const bool hwReady = hardware && setupHardware(decoder);
+        const bool hwReady = hardware && !live && setupHardware(decoder);
         if (hardware && !hwReady)
             logInfo("하드웨어 디코딩을 쓸 수 없어 CPU로 디코딩: " + path);
         if (hwReady) {
@@ -271,7 +331,9 @@ struct VideoSource::Impl {
 
         timeBase = av_q2d(stream->time_base);
         streamStart = stream->start_time != AV_NOPTS_VALUE ? stream->start_time : 0;
-        if (stream->duration != AV_NOPTS_VALUE && stream->duration > 0)
+        if (live)
+            durationHint = -1.0;
+        else if (stream->duration != AV_NOPTS_VALUE && stream->duration > 0)
             durationHint = stream->duration * timeBase;
         else if (format->duration != AV_NOPTS_VALUE && format->duration > 0)
             durationHint = static_cast<double>(format->duration) / AV_TIME_BASE;
@@ -280,12 +342,31 @@ struct VideoSource::Impl {
         if (rate.num > 0 && rate.den > 0)
             defaultFrameDuration = double(rate.den) / double(rate.num);
 
-        logInfo("영상 열기: " + path + " (" + std::to_string(codec->width) + "x" +
-                std::to_string(codec->height) + ", " + decoder->name + ", " +
-                (hwReady ? "하드웨어 " + hwName : std::string("CPU")) + ")");
-
-        thread = std::thread([this] { run(); });
+        decoderInfo = std::to_string(codec->width) + "x" + std::to_string(codec->height) + ", " + decoder->name +
+                      ", " + (hwReady ? "하드웨어 " + hwName : std::string("CPU"));
         return true;
+    }
+
+    // 라이브 입력이 끊겼을 때: 닫고 2초마다 다시 엶. 정지 요청 시 false
+    bool reconnect()
+    {
+        closeInput();
+        logWarning("라이브 입력 끊김, 2초마다 다시 연결 시도: " + path);
+        while (!stopRequested) {
+            {
+                std::unique_lock<std::mutex> lock(mutex);
+                cv.wait_for(lock, std::chrono::seconds(2), [this] { return stopRequested.load(); });
+            }
+            if (stopRequested)
+                return false;
+            std::string error;
+            std::string info;
+            if (openInput(error, info)) {
+                logInfo("라이브 입력 다시 연결됨: " + path + " (" + info + ")");
+                return true;
+            }
+        }
+        return false;
     }
 
     std::shared_ptr<Frame> convert(const AVFrame* f)
@@ -329,6 +410,16 @@ struct VideoSource::Impl {
 
     bool push(double time, std::shared_ptr<const Frame> frame)
     {
+        if (live) {
+            // 라이브: 가장 최근 프레임 1장만 보관 (기다리지 않음)
+            std::lock_guard<std::mutex> lock(mutex);
+            if (stopRequested)
+                return false;
+            queue.clear();
+            queue.push_back(Queued{time, std::move(frame)});
+            cv.notify_all();
+            return true;
+        }
         std::unique_lock<std::mutex> lock(mutex);
         cv.wait(lock, [this] { return stopRequested.load() || queue.size() < kMaxQueuedFrames; });
         if (stopRequested)
@@ -382,11 +473,22 @@ struct VideoSource::Impl {
         while (!done && !stopRequested) {
             if (!draining) {
                 const int r = av_read_frame(format, packet);
+                if (live && r < 0 && r != AVERROR(EAGAIN)) {
+                    // 라이브 입력 끊김: 재연결
+                    if (stopRequested || !reconnect())
+                        break;
+                    continue;
+                }
+                if (live && r == AVERROR(EAGAIN)) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                    continue;
+                }
                 if (r == AVERROR_EOF || (r < 0 && format->pb && avio_feof(format->pb))) {
                     avcodec_send_packet(codec, nullptr); // 디코더에 남은 프레임 배출
                     draining = true;
                 } else if (r < 0) {
-                    logError("영상 읽기 오류: " + path + " (" + ffmpegError(r) + ")");
+                    if (!stopRequested) // 정지 요청으로 중단된 경우는 오류 아님
+                        logError("영상 읽기 오류: " + path + " (" + ffmpegError(r) + ")");
                     break;
                 } else {
                     if (packet->stream_index == streamIndex) {
@@ -445,7 +547,7 @@ struct VideoSource::Impl {
                 // 디코딩이 재생 시각보다 늦으면 따라잡기
                 //  - 2프레임 이상 늦은 프레임은 변환하지 않고 버림 (단, 0.5초마다 1장은 표시)
                 //  - 0.5초 이상 늦으면 참조되지 않는 프레임은 디코딩 자체를 생략
-                const double clock = requestedTime.load();
+                const double clock = live ? -1.0 : requestedTime.load();
                 const double lag = clock >= 0.0 ? clock - t : 0.0;
                 codec->skip_frame = lag > 0.5 ? AVDISCARD_NONREF : AVDISCARD_DEFAULT;
                 const double dropThreshold = std::max(0.05, 2.0 * defaultFrameDuration);
@@ -516,6 +618,18 @@ VideoSource::VideoSource(std::string path, bool loop, bool hardware)
     d->hardware = hardware;
 }
 
+VideoSource::VideoSource(std::string path, VideoOptions options)
+    : d(std::make_unique<Impl>())
+{
+    d->path = std::move(path);
+    d->loop = options.loop;
+    d->hardware = options.hardware;
+    d->live = options.live;
+    d->inputFormat = options.inputFormat;
+    d->liveSize = options.liveSize;
+    d->liveFps = options.liveFps;
+}
+
 std::uint64_t VideoSource::droppedFrames() const
 {
     return d->dropped.load();
@@ -538,6 +652,15 @@ bool VideoSource::open(std::string& error)
 
 std::shared_ptr<const Frame> VideoSource::frameAt(double seconds)
 {
+    if (d->live) {
+        // 라이브: 시각과 관계없이 가장 최근 프레임
+        std::lock_guard<std::mutex> lock(d->mutex);
+        if (!d->queue.empty()) {
+            d->current = d->queue.back().frame;
+            d->queue.clear();
+        }
+        return d->current;
+    }
     // 가장 앞선 요청 시각을 재생 시계로 사용
     double prev = d->requestedTime.load();
     while (seconds > prev && !d->requestedTime.compare_exchange_weak(prev, seconds)) {

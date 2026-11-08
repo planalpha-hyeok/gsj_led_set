@@ -395,4 +395,11 @@ void ProjectController::setHardwareDecoding(bool enabled)
     emit playbackSettingsChanged();
 }
 
+void ProjectController::setInteractive(const InteractiveConfig& config)
+{
+    m_project.interactive = config;
+    setDirty(true);
+    emit interactiveChanged();
+}
+
 } // namespace led

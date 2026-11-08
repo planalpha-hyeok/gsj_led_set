@@ -232,6 +232,18 @@ void PlaybackEngine::stop()
         logInfo("재생 정지");
 }
 
+bool PlaybackEngine::skip(const std::string& regionId, int delta)
+{
+    std::lock_guard<std::mutex> lock(m_slotMutex);
+    for (auto& slot : m_slots) {
+        if (slot->region.id == regionId && slot->playlist) {
+            slot->playlist->requestSkip(delta);
+            return true;
+        }
+    }
+    return false;
+}
+
 bool PlaybackEngine::isPlaying() const
 {
     std::lock_guard<std::mutex> lock(m_slotMutex);

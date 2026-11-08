@@ -21,6 +21,14 @@ public:
     void stop() override;
     void setOverlay(std::shared_ptr<const Frame> overlay) override;
     std::string adapterName() const override;
+    void setClickHandler(ClickHandler handler) override { m_clickHandler = std::move(handler); }
+
+    // 창 메시지 처리에서 호출
+    void notifyClick(int x, int y)
+    {
+        if (m_clickHandler)
+            m_clickHandler(x, y);
+    }
 
 private:
     void threadMain(std::promise<std::string> initResult);
@@ -33,6 +41,7 @@ private:
     mutable std::mutex m_mutex;
     std::shared_ptr<const Frame> m_overlay;
     std::string m_adapterName;
+    ClickHandler m_clickHandler;
 };
 
 } // namespace led

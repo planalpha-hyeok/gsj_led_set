@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(gsj_led_player VERSION 0.3.0 LANGUAGES CXX)
+project(gsj_led_player VERSION 0.4.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -13,7 +13,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
 
 option(LED_BUILD_TESTS "테스트 빌드" ON)
 
-find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Widgets)
+find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Widgets Network SerialPort)
 find_package(FFmpeg REQUIRED)
 
 if(MSVC)
@@ -33,6 +33,8 @@ add_library(led_core STATIC
     src/core/ScheduleLogic.cpp
     src/core/TickerMotion.cpp
     src/core/Snap.cpp
+    src/core/ControlCommand.cpp
+    src/core/OscParser.cpp
     src/core/Log.cpp)
 target_include_directories(led_core PUBLIC "${SRC}")
 
@@ -48,7 +50,8 @@ add_library(led_media STATIC
     src/media/ImageSource.cpp
     src/media/QImageFrame.cpp
     src/media/MediaFactory.cpp
-    src/media/TickerStrip.cpp)
+    src/media/TickerStrip.cpp
+    src/media/CaptureDevices.cpp)
 target_link_libraries(led_media PUBLIC led_core Qt6::Gui PRIVATE FFmpeg::FFmpeg)
 
 # ---------------------------------------------------------------- render
@@ -63,7 +66,8 @@ target_link_libraries(led_render PUBLIC led_media)
 add_library(led_playback STATIC
     src/playback/PlaybackEngine.cpp
     src/playback/PlaylistPlayer.cpp
-    src/playback/TickerPlayer.cpp)
+    src/playback/TickerPlayer.cpp
+    src/playback/RuntimeOverrides.cpp)
 target_link_libraries(led_playback PUBLIC led_render led_media)
 
 # ---------------------------------------------------------------- display
@@ -93,6 +97,15 @@ target_link_libraries(led_output PUBLIC led_render led_display led_testpattern l
 add_library(led_schedule STATIC src/schedule/ScheduleRunner.cpp)
 target_link_libraries(led_schedule PUBLIC led_core Qt6::Core)
 
+# ---------------------------------------------------------------- interactive
+add_library(led_interactive STATIC
+    src/interactive/InteractiveHub.cpp
+    src/interactive/MidiInput.cpp)
+target_link_libraries(led_interactive PUBLIC led_core Qt6::Network Qt6::SerialPort)
+if(WIN32)
+    target_link_libraries(led_interactive PUBLIC winmm)
+endif()
+
 # ---------------------------------------------------------------- 실행 파일
 add_executable(gsj_led_player
     src/app/main.cpp
@@ -108,13 +121,16 @@ add_executable(gsj_led_player
     src/ui/ColorButton.cpp
     src/ui/EmergencyHotkey.cpp
     src/ui/PlaylistEditor.cpp
+    src/ui/LiveInputDialog.cpp
     src/ui/TickerEditor.cpp
     src/ui/ContentEditor.cpp
     src/ui/ScenePanel.cpp
     src/ui/SchedulePanel.cpp
-    src/ui/MainWindow.cpp)
+    src/ui/MainWindow.cpp
+    src/ui/MainWindowInteractive.cpp
+    src/ui/InteractivePanel.cpp)
 target_link_libraries(gsj_led_player PRIVATE
-    led_config led_playback led_output led_display led_schedule Qt6::Widgets)
+    led_config led_playback led_output led_display led_schedule led_interactive Qt6::Widgets)
 target_compile_definitions(gsj_led_player PRIVATE LED_PLAYER_VERSION="${PROJECT_VERSION}")
 set_target_properties(gsj_led_player PROPERTIES WIN32_EXECUTABLE ON)
 

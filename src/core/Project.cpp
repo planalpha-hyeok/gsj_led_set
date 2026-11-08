@@ -11,8 +11,8 @@ namespace led {
 
 bool PlaylistItem::operator==(const PlaylistItem& o) const
 {
-    return id == o.id && source == o.source && duration == o.duration && transition == o.transition &&
-           transitionDuration == o.transitionDuration;
+    return id == o.id && type == o.type && source == o.source && liveSize == o.liveSize && liveFps == o.liveFps &&
+           duration == o.duration && transition == o.transition && transitionDuration == o.transitionDuration;
 }
 
 bool TickerConfig::operator==(const TickerConfig& o) const

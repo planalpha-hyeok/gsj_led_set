@@ -4,6 +4,7 @@
 
 #include <QGuiApplication>
 #include <QImage>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QScreen>
 
@@ -81,6 +82,15 @@ void QtOutputSurface::paintEvent(QPaintEvent*)
     }
 }
 
+void QtOutputSurface::mousePressEvent(QMouseEvent* event)
+{
+    if (!m_clickHandler || width() <= 0 || height() <= 0)
+        return;
+    const QPointF p = event->position();
+    m_clickHandler(static_cast<int>(p.x() * m_spec.canvasRect.w / width()),
+                   static_cast<int>(p.y() * m_spec.canvasRect.h / height()));
+}
+
 QtOutputWindow::~QtOutputWindow()
 {
     stop();
@@ -94,6 +104,7 @@ bool QtOutputWindow::start(const OutputSpec& spec, SceneProvider* scene, std::st
         return false;
     }
     m_surface = std::make_unique<QtOutputSurface>(spec, scene);
+    m_surface->setClickHandler(m_clickHandler);
     m_surface->show();
     logInfo("출력 시작(개발용 창): " + spec.name);
     return true;

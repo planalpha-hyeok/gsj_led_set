@@ -61,6 +61,9 @@ public:
     // 재생 설정
     void setHardwareDecoding(bool enabled);
 
+    // 인터랙티브
+    void setInteractive(const InteractiveConfig& config);
+
 signals:
     void projectReset();
     void regionsChanged();
@@ -73,6 +76,7 @@ signals:
     void contentChanged(const QString& sceneId, const QString& regionId);
     void scheduleChanged();
     void playbackSettingsChanged();
+    void interactiveChanged();
 
 private:
     void setDirty(bool dirty);

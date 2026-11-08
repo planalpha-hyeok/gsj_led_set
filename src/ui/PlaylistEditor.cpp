@@ -1,5 +1,7 @@
 #include "ui/PlaylistEditor.h"
 
+#include "ui/LiveInputDialog.h"
+
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
@@ -29,9 +31,14 @@ const char kMediaFilter[] =
 
 QString itemText(int index, const PlaylistItem& item)
 {
-    const QString file = QFileInfo(QString::fromStdString(item.source)).fileName();
-    const QString duration =
-        item.duration > 0.0 ? QStringLiteral("%1초").arg(item.duration, 0, 'f', 1) : QStringLiteral("자동");
+    const bool live = item.type == ItemType::Live;
+    QString file = live ? QStringLiteral("[라이브] %1").arg(QString::fromStdString(item.source))
+                        : QFileInfo(QString::fromStdString(item.source)).fileName();
+    if (live && !item.liveSize.empty())
+        file += QStringLiteral(" %1").arg(QString::fromStdString(item.liveSize));
+    const QString duration = item.duration > 0.0 ? QStringLiteral("%1초").arg(item.duration, 0, 'f', 1)
+                             : live               ? QStringLiteral("계속")
+                                                  : QStringLiteral("자동");
     const QString transition = item.transition == TransitionType::Fade
                                    ? QStringLiteral("페이드 %1초").arg(item.transitionDuration, 0, 'f', 1)
                                    : QStringLiteral("컷");
@@ -54,10 +61,13 @@ PlaylistEditor::PlaylistEditor(QWidget* parent)
 
     auto* buttons = new QHBoxLayout;
     m_addButton = new QPushButton(QStringLiteral("파일 추가..."), this);
+    m_addLiveButton = new QPushButton(QStringLiteral("라이브 입력 추가..."), this);
+    m_addLiveButton->setToolTip(QStringLiteral("캡처보드/웹캠 영상을 이 영역에 표시"));
     m_removeButton = new QPushButton(QStringLiteral("삭제"), this);
     m_upButton = new QPushButton(QStringLiteral("위로"), this);
     m_downButton = new QPushButton(QStringLiteral("아래로"), this);
     buttons->addWidget(m_addButton);
+    buttons->addWidget(m_addLiveButton);
     buttons->addWidget(m_removeButton);
     buttons->addWidget(m_upButton);
     buttons->addWidget(m_downButton);
@@ -73,7 +83,7 @@ PlaylistEditor::PlaylistEditor(QWidget* parent)
     m_duration->setDecimals(1);
     m_duration->setSingleStep(1.0);
     m_duration->setSuffix(QStringLiteral(" 초"));
-    m_duration->setSpecialValueText(QStringLiteral("자동 (영상: 끝까지, 이미지: 10초)"));
+    m_duration->setSpecialValueText(QStringLiteral("자동 (영상: 끝까지, 이미지: 10초, 라이브: 계속)"));
     m_duration->setKeyboardTracking(false);
     form->addRow(QStringLiteral("재생 시간"), m_duration);
 
@@ -90,6 +100,9 @@ PlaylistEditor::PlaylistEditor(QWidget* parent)
     transitionRow->addWidget(m_transition, 1);
     transitionRow->addWidget(m_fade);
     form->addRow(QStringLiteral("시작 전환"), transitionRow);
+
+    m_liveSettingsButton = new QPushButton(QStringLiteral("라이브 입력 설정..."), m_itemForm);
+    form->addRow(QString(), m_liveSettingsButton);
     layout->addWidget(m_itemForm);
 
     m_loop = new QCheckBox(QStringLiteral("목록 반복 (끄면 마지막 항목 화면 유지)"), this);
@@ -100,6 +113,8 @@ PlaylistEditor::PlaylistEditor(QWidget* parent)
     layout->addWidget(hint);
 
     connect(m_addButton, &QPushButton::clicked, this, &PlaylistEditor::addItems);
+    connect(m_addLiveButton, &QPushButton::clicked, this, &PlaylistEditor::addLiveInput);
+    connect(m_liveSettingsButton, &QPushButton::clicked, this, &PlaylistEditor::editLiveInput);
     connect(m_removeButton, &QPushButton::clicked, this, &PlaylistEditor::removeItem);
     connect(m_upButton, &QPushButton::clicked, this, [this] { moveItem(-1); });
     connect(m_downButton, &QPushButton::clicked, this, [this] { moveItem(+1); });
@@ -164,6 +179,7 @@ void PlaylistEditor::loadItem()
     m_transition->setCurrentIndex(std::max(0, m_transition->findData(int(item.transition))));
     m_fade->setValue(std::max(0.1, item.transitionDuration));
     m_fade->setEnabled(item.transition == TransitionType::Fade);
+    m_liveSettingsButton->setVisible(item.type == ItemType::Live);
     m_loading = false;
 }
 
@@ -191,6 +207,36 @@ void PlaylistEditor::addItems()
         m_content.items.push_back(std::move(item));
     }
     refreshList(lastId);
+    emit edited(m_content);
+}
+
+void PlaylistEditor::addLiveInput()
+{
+    LiveInputDialog dialog(this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+    PlaylistItem item = dialog.item();
+    item.id = generateId();
+    m_content.items.push_back(item);
+    refreshList(item.id);
+    emit edited(m_content);
+}
+
+void PlaylistEditor::editLiveInput()
+{
+    const int index = currentIndex();
+    if (index < 0 || m_content.items[static_cast<std::size_t>(index)].type != ItemType::Live)
+        return;
+    LiveInputDialog dialog(this);
+    dialog.setItem(m_content.items[static_cast<std::size_t>(index)]);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+    PlaylistItem updated = dialog.item();
+    PlaylistItem& item = m_content.items[static_cast<std::size_t>(index)];
+    item.source = updated.source;
+    item.liveSize = updated.liveSize;
+    item.liveFps = updated.liveFps;
+    refreshList(item.id);
     emit edited(m_content);
 }
 

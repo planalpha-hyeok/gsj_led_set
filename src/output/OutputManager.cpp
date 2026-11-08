@@ -48,6 +48,13 @@ void OutputManager::start(const Project& project, QStringList& errors)
         spec.topmost = !display->primary;
 
         auto window = createOutputWindow();
+        const RectI canvasRect = oc.canvasRect;
+        window->setClickHandler([this, canvasRect](int x, int y) {
+            // 렌더 스레드에서 호출될 수 있으므로 GUI 스레드로 넘김
+            QMetaObject::invokeMethod(
+                this, [this, cx = canvasRect.x + x, cy = canvasRect.y + y] { emit canvasClicked(cx, cy); },
+                Qt::QueuedConnection);
+        });
         std::string error;
         if (!window->start(spec, m_scene, error)) {
             errors << QStringLiteral("%1: %2").arg(name, QString::fromStdString(error));

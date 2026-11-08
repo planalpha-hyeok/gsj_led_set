@@ -9,6 +9,11 @@ add_test(NAME schedule COMMAND test_schedule)
 add_executable(test_playback test_playback.cpp)
 target_link_libraries(test_playback PRIVATE led_playback Qt6::Gui)
 
+add_executable(test_interactive test_interactive.cpp)
+target_link_libraries(test_interactive PRIVATE led_interactive led_playback)
+add_test(NAME interactive COMMAND test_interactive)
+set_tests_properties(interactive PROPERTIES TIMEOUT 60)
+
 add_executable(test_serializer test_serializer.cpp)
 target_link_libraries(test_serializer PRIVATE led_config)
 add_test(NAME serializer COMMAND test_serializer)

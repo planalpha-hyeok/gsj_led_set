@@ -3,6 +3,7 @@
 
 #include "TestUtil.h"
 
+#include "media/MediaFactory.h"
 #include "media/VideoSource.h"
 
 #include <chrono>
@@ -90,6 +91,49 @@ int main(int argc, char* argv[])
             next = source.frameAt(0.5);
         }
         CHECK(next && next != f);
+    }
+
+    {
+        // 라이브 입력 (시험 신호): 최신 프레임이 계속 바뀌어야 함
+        auto live = createLiveSource("lavfi:testsrc2=size=160x120:rate=30", "", 0.0);
+        std::string error;
+        CHECK(live->open(error));
+        CHECK(live->waitForFirstFrame(3000));
+        auto a = live->frameAt(0.0);
+        CHECK(a && a->width == 160 && a->height == 120);
+        std::shared_ptr<const Frame> b;
+        for (int i = 0; i < 100 && (!b || b == a); ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            b = live->frameAt(0.0); // 라이브는 시각과 무관하게 최신 프레임
+        }
+        CHECK(b && b != a);
+        CHECK(live->durationHint() < 0.0);
+        live->stop();
+    }
+
+    {
+        // 라이브 입력 끊김 -> 재연결: 1초짜리 신호가 끝나도 2초 뒤 다시 열려 프레임이 이어져야 함
+        auto live = createLiveSource("lavfi:testsrc2=size=160x120:rate=30:duration=1", "", 0.0);
+        std::string error;
+        CHECK(live->open(error));
+        CHECK(live->waitForFirstFrame(3000));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1500)); // 첫 신호 종료
+        auto before = live->frameAt(0.0);
+        std::shared_ptr<const Frame> after;
+        for (int i = 0; i < 400 && (!after || after == before); ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            after = live->frameAt(0.0);
+        }
+        CHECK(before && after && after != before);
+        live->stop(); // 재연결 대기 중에도 바로 멈춰야 함
+    }
+
+    {
+        // 없는 라이브 장치
+        auto live = createLiveSource("이런장치없음", "", 0.0);
+        std::string error;
+        CHECK(!live->open(error));
+        CHECK(!error.empty());
     }
 
     {

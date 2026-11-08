@@ -28,6 +28,8 @@ public:
     bool waitForFirstFrame(int timeoutMs);
     void start(PlaybackClock::time_point startTime);
     void tick(PlaybackClock::time_point now);
+    // 외부 명령: +1 다음 항목, -1 이전 항목 (다음 tick에서 처리)
+    void requestSkip(int delta);
     void stop();
 
     void appendClips(std::vector<ClipView>& out) const;
@@ -47,6 +49,7 @@ private:
     bool sourceLoops(std::size_t index) const;
     double plannedDuration(const Run& run) const;
     void startPreload(std::size_t index);
+    void cancelPreload();
 
     RegionContent m_content;
     bool m_hardware = false;
@@ -57,6 +60,8 @@ private:
     bool m_preloading = false;
     bool m_static = false;          // 항목 1개 반복: 전환 없이 소스 자체 반복
     std::size_t m_failCount = 0;
+    int m_skipRequest = 0;
+    bool m_forcedSwitch = false;
 };
 
 } // namespace led

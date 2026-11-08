@@ -28,6 +28,8 @@ signals:
 
 private slots:
     void addItems();
+    void addLiveInput();
+    void editLiveInput();
     void removeItem();
     void moveItem(int delta);
     void onSelectionChanged();
@@ -42,6 +44,8 @@ private:
     RegionContent m_content;
     QListWidget* m_list;
     QPushButton* m_addButton;
+    QPushButton* m_addLiveButton;
+    QPushButton* m_liveSettingsButton;
     QPushButton* m_removeButton;
     QPushButton* m_upButton;
     QPushButton* m_downButton;

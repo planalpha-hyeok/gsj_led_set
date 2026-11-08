@@ -39,10 +39,18 @@ struct Region {
 
 enum class TransitionType { Cut, Fade };
 
+enum class ItemType {
+    File,   // 영상/이미지 파일
+    Live    // 캡처보드/웹캠 등 라이브 입력 장치
+};
+
 struct PlaylistItem {
     std::string id;
-    std::string source;              // 영상/이미지 파일 경로
-    double duration = 0.0;           // 초. 0 = 자동 (영상: 끝까지 1회, 이미지: 10초)
+    ItemType type = ItemType::File;
+    std::string source;              // 파일: 경로 / 라이브: 장치 이름
+    std::string liveSize;            // 라이브: 입력 해상도 (예: "1920x1080", 비어 있으면 자동)
+    double liveFps = 0.0;            // 라이브: 입력 프레임 (0 = 자동)
+    double duration = 0.0;           // 초. 0 = 자동 (영상: 끝까지 1회, 이미지: 10초, 라이브: 계속)
     TransitionType transition = TransitionType::Cut;  // 이 항목이 시작될 때 전환 방식
     double transitionDuration = 1.0; // 페이드 시간(초)
 
@@ -140,6 +148,30 @@ struct OutputConfig {
     bool enabled = true;
 };
 
+// ---------------------------------------------------------------- 인터랙티브
+
+// 트리거(터치/MIDI 등) -> 명령 연결
+struct TriggerMapping {
+    std::string trigger;   // 예: "touch:버튼1", "midi:note:60", "midi:cc:20"
+    std::string command;   // 예: "scene 행사"
+};
+
+struct InteractiveConfig {
+    bool udpEnabled = false;
+    int udpPort = 7000;
+    bool tcpEnabled = false;
+    int tcpPort = 7001;
+    bool oscEnabled = false;
+    int oscPort = 8000;
+    bool serialEnabled = false;
+    std::string serialPort;            // 예: "COM3"
+    int serialBaud = 9600;
+    bool midiEnabled = false;
+    std::string midiDevice;            // MIDI 입력 장치 이름
+    bool touchEnabled = false;         // 출력 화면 터치/클릭 -> "touch:<영역 이름>" 트리거
+    std::vector<TriggerMapping> mappings;
+};
+
 // ---------------------------------------------------------------- 프로젝트
 
 struct Project {
@@ -150,6 +182,7 @@ struct Project {
     std::vector<OutputConfig> outputs;
     bool autoStart = false;           // 프로그램 시작 시 출력 켜기 + 재생(또는 스케줄 운영)
     bool hardwareDecoding = true;     // 영상 하드웨어 디코딩 (영역별 설정이 '전체 설정 따름'일 때)
+    InteractiveConfig interactive;
 
     Region* findRegion(const std::string& id);
     const Region* findRegion(const std::string& id) const;
