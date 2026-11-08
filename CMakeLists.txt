@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(gsj_led_player VERSION 0.4.0 LANGUAGES CXX)
+project(gsj_led_player VERSION 0.5.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -35,6 +35,7 @@ add_library(led_core STATIC
     src/core/Snap.cpp
     src/core/ControlCommand.cpp
     src/core/OscParser.cpp
+    src/core/TimelineEdit.cpp
     src/core/Log.cpp)
 target_include_directories(led_core PUBLIC "${SRC}")
 
@@ -51,8 +52,17 @@ add_library(led_media STATIC
     src/media/QImageFrame.cpp
     src/media/MediaFactory.cpp
     src/media/TickerStrip.cpp
-    src/media/CaptureDevices.cpp)
+    src/media/CaptureDevices.cpp
+    src/media/MediaInfo.cpp
+    src/media/AudioSource.cpp
+    src/media/AudioOutput.cpp)
+# miniaudio (외부 코드): 경고 끔
+set_source_files_properties(src/media/AudioOutput.cpp PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>")
 target_link_libraries(led_media PUBLIC led_core Qt6::Gui PRIVATE FFmpeg::FFmpeg)
+target_include_directories(led_media PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/miniaudio")
+if(UNIX AND NOT APPLE)
+    target_link_libraries(led_media PRIVATE dl pthread m)
+endif()
 
 # ---------------------------------------------------------------- render
 add_library(led_render STATIC src/render/Scene.cpp)
@@ -67,7 +77,8 @@ add_library(led_playback STATIC
     src/playback/PlaybackEngine.cpp
     src/playback/PlaylistPlayer.cpp
     src/playback/TickerPlayer.cpp
-    src/playback/RuntimeOverrides.cpp)
+    src/playback/RuntimeOverrides.cpp
+    src/playback/TimelinePlayer.cpp)
 target_link_libraries(led_playback PUBLIC led_render led_media)
 
 # ---------------------------------------------------------------- display
@@ -128,7 +139,10 @@ add_executable(gsj_led_player
     src/ui/SchedulePanel.cpp
     src/ui/MainWindow.cpp
     src/ui/MainWindowInteractive.cpp
-    src/ui/InteractivePanel.cpp)
+    src/ui/InteractivePanel.cpp
+    src/ui/timeline/TimelineView.cpp
+    src/ui/timeline/TimelinePropertyPanel.cpp
+    src/ui/timeline/TimelineEditor.cpp)
 target_link_libraries(gsj_led_player PRIVATE
     led_config led_playback led_output led_display led_schedule led_interactive Qt6::Widgets)
 target_compile_definitions(gsj_led_player PRIVATE LED_PLAYER_VERSION="${PROJECT_VERSION}")

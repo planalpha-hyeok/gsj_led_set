@@ -18,6 +18,7 @@ struct VideoOptions {
     std::string inputFormat;    // 라이브 입력 방식 (예: "dshow", "v4l2", "lavfi")
     std::string liveSize;       // 예: "1920x1080" (비어 있으면 장치 기본값)
     double liveFps = 0.0;       // 0 = 장치 기본값
+    double startTime = 0.0;     // 파일의 이 시각(초)부터 재생 (자르기/타임라인 이동). 반복 시에도 이 시각으로 돌아감
 };
 
 class VideoSource final : public MediaSource {

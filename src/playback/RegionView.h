@@ -7,6 +7,7 @@
 #include "core/Project.h"
 #include "media/MediaSource.h"
 #include "media/TickerStrip.h"
+#include "playback/TimelineClock.h"
 
 #include <chrono>
 #include <cstdint>
@@ -24,7 +25,19 @@ struct ClipView {
     PlaybackClock::time_point fadeStart;  // 페이드 인 시작 시각
     double fadeSeconds = 0.0;             // 0 = 즉시 표시
     std::uint64_t key = 0;                // 텍스처 구분용 고유 번호
+
+    // 타임라인 클립 (timeline이 있으면 위 시각 대신 타임라인 시계 사용)
+    std::shared_ptr<const TimelineClock> timeline;
+    double sourceZero = 0.0;              // 소스 시각 0에 해당하는 타임라인 시각
+    double clipStart = 0.0;
+    double clipEnd = 0.0;
+    double fadeIn = 0.0;
+    double fadeOut = 0.0;
+    double clipOpacity = 1.0;
 };
+
+// 타임라인 클립의 투명도 (페이드 인/아웃 포함). 클립 밖이면 0
+double timelineClipAlpha(const ClipView& clip, double timelineTime);
 
 struct TickerView {
     std::shared_ptr<const TickerStrip> strip;

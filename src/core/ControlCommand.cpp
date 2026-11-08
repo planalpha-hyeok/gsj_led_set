@@ -1,6 +1,9 @@
 #include "core/ControlCommand.h"
 
 #include <cctype>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace led {
 
@@ -57,6 +60,59 @@ std::string takeArg(std::string& rest)
 
 } // namespace
 
+bool parseTimeText(const std::string& input, double& seconds)
+{
+    const std::string text = trimText(input);
+    if (text.empty())
+        return false;
+    double total = 0.0;
+    int parts = 0;
+    std::size_t start = 0;
+    while (true) {
+        const std::size_t colon = text.find(':', start);
+        const std::string part = text.substr(start, colon == std::string::npos ? std::string::npos : colon - start);
+        if (part.empty())
+            return false;
+        for (char c : part)
+            if (!(std::isdigit(static_cast<unsigned char>(c)) || c == '.'))
+                return false;
+        char* end = nullptr;
+        const double v = std::strtod(part.c_str(), &end);
+        if (!end || *end != '\0' || v < 0.0)
+            return false;
+        // 마지막 부분이 아닌 시/분은 정수, 분/초는 60 미만
+        if (colon != std::string::npos && part.find('.') != std::string::npos)
+            return false;
+        if (parts > 0 && v >= 60.0)
+            return false;
+        total = total * 60.0 + v;
+        ++parts;
+        if (parts > 3)
+            return false;
+        if (colon == std::string::npos)
+            break;
+        start = colon + 1;
+    }
+    seconds = total;
+    return true;
+}
+
+std::string formatTimeText(double seconds)
+{
+    if (seconds < 0.0)
+        seconds = 0.0;
+    const long long tenths = std::llround(seconds * 10.0);
+    const long long h = tenths / 36000;
+    const long long m = (tenths / 600) % 60;
+    const double s = static_cast<double>(tenths % 600) / 10.0;
+    char buf[32];
+    if (h > 0)
+        std::snprintf(buf, sizeof(buf), "%lld:%02lld:%04.1f", h, m, s);
+    else
+        std::snprintf(buf, sizeof(buf), "%lld:%04.1f", m, s);
+    return buf;
+}
+
 std::string trimText(const std::string& s)
 {
     std::size_t b = 0;
@@ -102,6 +158,22 @@ bool parseCommand(const std::string& line, ControlCommand& out, std::string& err
     }
     if (word == "reset" || word == "초기화") {
         out.type = CommandType::Reset;
+        return true;
+    }
+    if (word == "pause" || word == "일시정지") {
+        out.type = CommandType::Pause;
+        return true;
+    }
+    if (word == "go" || word == "resume" || word == "계속") {
+        out.type = CommandType::Go;
+        return true;
+    }
+    if (word == "seek" || word == "이동") {
+        out.type = CommandType::Seek;
+        if (!parseTimeText(target, out.seconds)) {
+            error = "시각 형식이 잘못됨 (예: 90, 1:30): " + target;
+            return false;
+        }
         return true;
     }
     if (word == "next" || word == "다음")

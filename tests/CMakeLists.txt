@@ -2,6 +2,10 @@ add_executable(test_geometry test_geometry.cpp)
 target_link_libraries(test_geometry PRIVATE led_render)
 add_test(NAME geometry COMMAND test_geometry)
 
+add_executable(test_timeline_edit test_timeline_edit.cpp)
+target_link_libraries(test_timeline_edit PRIVATE led_core)
+add_test(NAME timeline_edit COMMAND test_timeline_edit)
+
 add_executable(test_schedule test_schedule.cpp)
 target_link_libraries(test_schedule PRIVATE led_core)
 add_test(NAME schedule COMMAND test_schedule)
@@ -24,6 +28,9 @@ if(WIN32)
     add_test(NAME d3d11_smoke COMMAND test_d3d11_smoke)
 endif()
 
+add_executable(test_audio test_audio.cpp)
+target_link_libraries(test_audio PRIVATE led_media)
+
 add_executable(test_video test_video.cpp)
 target_link_libraries(test_video PRIVATE led_media)
 
@@ -37,8 +44,15 @@ if(FFMPEG_EXECUTABLE)
     set_tests_properties(make_sample_video PROPERTIES FIXTURES_SETUP sample_video)
     add_test(NAME video COMMAND test_video "${SAMPLE_VIDEO}")
     set_tests_properties(video PROPERTIES FIXTURES_REQUIRED sample_video TIMEOUT 60)
-    add_test(NAME playback COMMAND test_playback "${SAMPLE_VIDEO}")
-    set_tests_properties(playback PROPERTIES FIXTURES_REQUIRED sample_video TIMEOUT 120)
+    set(SAMPLE_AUDIO "${CMAKE_CURRENT_BINARY_DIR}/sample_tone_1s.wav")
+    add_test(NAME make_sample_audio
+        COMMAND "${FFMPEG_EXECUTABLE}" -y -loglevel error -f lavfi -i "sine=frequency=440:sample_rate=44100:duration=0.5"
+                -af "apad=whole_dur=1" -ac 1 "${SAMPLE_AUDIO}")
+    set_tests_properties(make_sample_audio PROPERTIES FIXTURES_SETUP sample_audio)
+    add_test(NAME audio COMMAND test_audio "${SAMPLE_AUDIO}" "${SAMPLE_VIDEO}")
+    set_tests_properties(audio PROPERTIES FIXTURES_REQUIRED "sample_audio;sample_video" TIMEOUT 60)
+    add_test(NAME playback COMMAND test_playback "${SAMPLE_VIDEO}" "${SAMPLE_AUDIO}")
+    set_tests_properties(playback PROPERTIES FIXTURES_REQUIRED "sample_video;sample_audio" TIMEOUT 180)
 else()
     message(STATUS "ffmpeg 실행 파일 없음: 영상 디코딩 테스트 생략")
     add_test(NAME playback COMMAND test_playback)

@@ -73,6 +73,41 @@ static Project makeSample()
     s2.name = "오후";
     p.scenes.push_back(s2);
 
+    Scene s3;
+    s3.id = "s3";
+    s3.name = "공연";
+    s3.kind = SceneKind::Timeline;
+    TimelineLayer layer;
+    layer.id = "L1";
+    layer.name = "배경";
+    layer.regionId = "r1";
+    layer.muted = true;
+    layer.locked = true;
+    TimelineClip clip;
+    clip.id = "k1";
+    clip.source = "C:/공연/오프닝.mp4";
+    clip.start = 1.5;
+    clip.duration = 12.25;
+    clip.inPoint = 3.0;
+    clip.fadeIn = 0.5;
+    clip.fadeOut = 1.0;
+    clip.opacity = 0.8;
+    clip.volume = 0.6;
+    clip.loop = true;
+    layer.clips = {clip};
+    TimelineLayer soundOnly;
+    soundOnly.id = "L2";
+    soundOnly.name = "음악";
+    soundOnly.visible = false;
+    s3.timeline.layers = {layer, soundOnly};
+    TimelineCue cue;
+    cue.id = "q1";
+    cue.name = "막 1";
+    cue.time = 30.0;
+    s3.timeline.cues = {cue};
+    s3.timeline.endAction = TimelineEnd::Loop;
+    p.scenes.push_back(s3);
+
     p.schedule.enabled = true;
     p.schedule.outside = OutsideBehavior::DefaultScene;
     p.schedule.defaultSceneId = "s2";
@@ -124,8 +159,16 @@ static void testRoundTrip()
         CHECK(loaded.regions[1].decode == DecodeMode::Software);
     }
 
-    CHECK(loaded.scenes.size() == 2);
-    if (loaded.scenes.size() == 2) {
+    CHECK(loaded.scenes.size() == 3);
+    if (loaded.scenes.size() == 3) {
+        const Scene& t = loaded.scenes[2];
+        CHECK(t.kind == SceneKind::Timeline);
+        CHECK(t.timeline == original.scenes[2].timeline);
+        CHECK(t.timeline.endAction == TimelineEnd::Loop);
+        CHECK(t.timeline.layers.size() == 2 && t.timeline.layers[1].regionId.empty());
+        CHECK(loaded.scenes[0].kind == SceneKind::Regions);
+    }
+    if (loaded.scenes.size() == 3) {
         const Scene& s = loaded.scenes[0];
         CHECK(s.name == "오전");
         const RegionContent* c = s.contentFor("r1");

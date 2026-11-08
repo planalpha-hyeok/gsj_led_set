@@ -96,6 +96,99 @@ QJsonObject contentToJson(const RegionContent& c)
     return o;
 }
 
+QJsonObject timelineToJson(const Timeline& t)
+{
+    QJsonObject o;
+    o["endAction"] = QString::fromLatin1(timelineEndKey(t.endAction));
+    QJsonArray layers;
+    for (const auto& l : t.layers) {
+        QJsonObject lo;
+        lo["id"] = qs(l.id);
+        lo["name"] = qs(l.name);
+        lo["regionId"] = qs(l.regionId);
+        lo["visible"] = l.visible;
+        lo["muted"] = l.muted;
+        lo["locked"] = l.locked;
+        QJsonArray clips;
+        for (const auto& c : l.clips) {
+            QJsonObject co;
+            co["id"] = qs(c.id);
+            co["source"] = qs(c.source);
+            co["start"] = c.start;
+            co["duration"] = c.duration;
+            co["inPoint"] = c.inPoint;
+            co["fadeIn"] = c.fadeIn;
+            co["fadeOut"] = c.fadeOut;
+            co["opacity"] = c.opacity;
+            co["volume"] = c.volume;
+            co["loop"] = c.loop;
+            clips.append(co);
+        }
+        lo["clips"] = clips;
+        layers.append(lo);
+    }
+    o["layers"] = layers;
+    QJsonArray cues;
+    for (const auto& c : t.cues) {
+        QJsonObject co;
+        co["id"] = qs(c.id);
+        co["name"] = qs(c.name);
+        co["time"] = c.time;
+        cues.append(co);
+    }
+    o["cues"] = cues;
+    return o;
+}
+
+Timeline timelineFromJson(const QJsonObject& o)
+{
+    Timeline t;
+    TimelineEnd end;
+    if (timelineEndFromKey(ss(o.value("endAction").toString()), end))
+        t.endAction = end;
+    for (const QJsonValue& lv : o.value("layers").toArray()) {
+        const QJsonObject lo = lv.toObject();
+        TimelineLayer l;
+        l.id = ss(lo.value("id").toString());
+        if (l.id.empty())
+            l.id = generateId();
+        l.name = ss(lo.value("name").toString());
+        l.regionId = ss(lo.value("regionId").toString());
+        l.visible = lo.value("visible").toBool(true);
+        l.muted = lo.value("muted").toBool(false);
+        l.locked = lo.value("locked").toBool(false);
+        for (const QJsonValue& cv : lo.value("clips").toArray()) {
+            const QJsonObject co = cv.toObject();
+            TimelineClip c;
+            c.id = ss(co.value("id").toString());
+            if (c.id.empty())
+                c.id = generateId();
+            c.source = ss(co.value("source").toString());
+            c.start = std::max(0.0, co.value("start").toDouble(0.0));
+            c.duration = std::max(0.04, co.value("duration").toDouble(5.0));
+            c.inPoint = std::max(0.0, co.value("inPoint").toDouble(0.0));
+            c.fadeIn = std::clamp(co.value("fadeIn").toDouble(0.0), 0.0, 3600.0);
+            c.fadeOut = std::clamp(co.value("fadeOut").toDouble(0.0), 0.0, 3600.0);
+            c.opacity = std::clamp(co.value("opacity").toDouble(1.0), 0.0, 1.0);
+            c.volume = std::clamp(co.value("volume").toDouble(1.0), 0.0, 1.0);
+            c.loop = co.value("loop").toBool(false);
+            l.clips.push_back(std::move(c));
+        }
+        t.layers.push_back(std::move(l));
+    }
+    for (const QJsonValue& cv : o.value("cues").toArray()) {
+        const QJsonObject co = cv.toObject();
+        TimelineCue c;
+        c.id = ss(co.value("id").toString());
+        if (c.id.empty())
+            c.id = generateId();
+        c.name = ss(co.value("name").toString());
+        c.time = std::max(0.0, co.value("time").toDouble(0.0));
+        t.cues.push_back(std::move(c));
+    }
+    return t;
+}
+
 QJsonObject interactiveToJson(const InteractiveConfig& c)
 {
     QJsonObject o;
@@ -271,6 +364,9 @@ void normalizeProject(Project& p)
         c.erase(std::remove_if(c.begin(), c.end(),
                                [&](const RegionContent& rc) { return !p.findRegion(rc.regionId); }),
                 c.end());
+        for (TimelineLayer& layer : s.timeline.layers)
+            if (!layer.regionId.empty() && !p.findRegion(layer.regionId))
+                layer.regionId.clear(); // 삭제된 영역: 소리만 재생
     }
     for (ScheduleEntry& e : p.schedule.entries)
         if (e.id.empty())
@@ -305,6 +401,9 @@ QByteArray projectToJson(const Project& project)
         QJsonObject o;
         o["id"] = qs(s.id);
         o["name"] = qs(s.name);
+        o["kind"] = s.kind == SceneKind::Timeline ? QStringLiteral("timeline") : QStringLiteral("regions");
+        if (s.kind == SceneKind::Timeline)
+            o["timeline"] = timelineToJson(s.timeline);
         QJsonArray contents;
         for (const auto& c : s.contents)
             contents.append(contentToJson(c));
@@ -391,6 +490,9 @@ bool projectFromJson(const QByteArray& json, Project& out, QString* error)
             Scene s;
             s.id = ss(o.value("id").toString());
             s.name = ss(o.value("name").toString());
+            s.kind = o.value("kind").toString() == QLatin1String("timeline") ? SceneKind::Timeline : SceneKind::Regions;
+            if (s.kind == SceneKind::Timeline)
+                s.timeline = timelineFromJson(o.value("timeline").toObject());
             for (const QJsonValue& c : o.value("contents").toArray())
                 s.contents.push_back(contentFromJson(c.toObject()));
             p.scenes.push_back(std::move(s));

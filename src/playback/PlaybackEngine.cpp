@@ -119,6 +119,8 @@ void PlaybackEngine::publishLocked()
 {
     auto views = std::make_shared<std::vector<RegionView>>();
     views->reserve(m_slots.size());
+    if (m_timelinePlayer)
+        m_timelinePlayer->appendViews(*views);
     for (const auto& slot : m_slots) {
         RegionView v;
         v.rect = slot->region.rect;
@@ -140,6 +142,22 @@ void PlaybackEngine::play(const Project& project, const std::string& sceneId, st
     const Scene* scene = project.findScene(sceneId);
     if (!scene) {
         errors.push_back("재생할 장면을 찾을 수 없음");
+        return;
+    }
+
+    if (scene->kind == SceneKind::Timeline) {
+        auto player = std::make_unique<TimelinePlayer>(project, *scene);
+        player->prepare(errors, kFirstFrameTimeoutMs);
+        player->start();
+        {
+            std::lock_guard<std::mutex> lock(m_slotMutex);
+            m_timelinePlayer = std::move(player);
+            m_sceneId = sceneId;
+            m_playing = true;
+            publishLocked();
+        }
+        startControlThread();
+        logInfo("재생 시작: " + scene->name + " (타임라인)");
         return;
     }
 
@@ -176,13 +194,21 @@ void PlaybackEngine::update(const Project& project, std::vector<std::string>& er
 {
     std::vector<std::unique_ptr<Slot>> removed;
     bool sceneMissing = false;
+    bool kindChanged = false;
+    std::string sceneId;
     {
         std::lock_guard<std::mutex> lock(m_slotMutex);
         if (!m_playing)
             return;
+        sceneId = m_sceneId;
         const Scene* scene = project.findScene(m_sceneId);
         if (!scene) {
             sceneMissing = true;
+        } else if ((scene->kind == SceneKind::Timeline) != (m_timelinePlayer != nullptr)) {
+            kindChanged = true; // 장면 종류가 바뀜: 처음부터 다시 재생
+        } else if (m_timelinePlayer) {
+            m_timelinePlayer->reload(project, *scene);
+            publishLocked();
         } else {
             std::vector<std::unique_ptr<Slot>> old = std::move(m_slots);
             std::vector<Slot*> created;
@@ -201,6 +227,8 @@ void PlaybackEngine::update(const Project& project, std::vector<std::string>& er
     if (sceneMissing) {
         logWarning("재생 중인 장면이 삭제되어 재생을 정지합니다");
         stop();
+    } else if (kindChanged) {
+        play(project, sceneId, errors);
     }
 }
 
@@ -208,11 +236,13 @@ void PlaybackEngine::stop()
 {
     stopControlThread();
     std::vector<std::unique_ptr<Slot>> slotList;
+    std::unique_ptr<TimelinePlayer> timeline;
     bool wasPlaying;
     {
         std::lock_guard<std::mutex> lock(m_slotMutex);
         slotList = std::move(m_slots);
         m_slots.clear();
+        timeline = std::move(m_timelinePlayer);
         wasPlaying = m_playing;
         m_playing = false;
         m_sceneId.clear();
@@ -228,6 +258,8 @@ void PlaybackEngine::stop()
     }
     for (auto& s : slotList)
         s->stop();
+    if (timeline)
+        timeline->stop();
     if (wasPlaying)
         logInfo("재생 정지");
 }
@@ -242,6 +274,41 @@ bool PlaybackEngine::skip(const std::string& regionId, int delta)
         }
     }
     return false;
+}
+
+bool PlaybackEngine::timelinePause()
+{
+    std::lock_guard<std::mutex> lock(m_slotMutex);
+    if (!m_timelinePlayer)
+        return false;
+    m_timelinePlayer->pause();
+    return true;
+}
+
+bool PlaybackEngine::timelineResume()
+{
+    std::lock_guard<std::mutex> lock(m_slotMutex);
+    if (!m_timelinePlayer)
+        return false;
+    m_timelinePlayer->resume();
+    return true;
+}
+
+bool PlaybackEngine::timelineSeek(double seconds)
+{
+    std::lock_guard<std::mutex> lock(m_slotMutex);
+    if (!m_timelinePlayer)
+        return false;
+    m_timelinePlayer->seek(seconds);
+    m_timelinePlayer->tick();
+    publishLocked();
+    return true;
+}
+
+TimelineStatus PlaybackEngine::timelineStatus() const
+{
+    std::lock_guard<std::mutex> lock(m_slotMutex);
+    return m_timelinePlayer ? m_timelinePlayer->status() : TimelineStatus{};
 }
 
 bool PlaybackEngine::isPlaying() const
@@ -283,6 +350,8 @@ void PlaybackEngine::controlLoop()
             const auto now = PlaybackClock::now();
             for (auto& slot : m_slots)
                 slot->tick(now);
+            if (m_timelinePlayer)
+                m_timelinePlayer->tick();
             publishLocked();
         }
         std::unique_lock<std::mutex> lock(m_wakeMutex);
@@ -325,14 +394,23 @@ void PlaybackEngine::computeLayers(const std::vector<RegionView>& views, Playbac
 
         // 플레이리스트 (페이드 중에는 이전 항목 위에 새 항목이 겹침)
         for (const ClipView& clip : view.clips) {
-            std::shared_ptr<const Frame> frame =
-                clip.source->frameAt(std::max(0.0, secondsBetween(clip.start, now)));
+            float alpha = 1.0f;
+            std::shared_ptr<const Frame> frame;
+            if (clip.timeline) {
+                // 타임라인 클립: 타임라인 시계 기준 (일시정지 시 같은 프레임 유지)
+                const double t = clip.timeline->time();
+                alpha = static_cast<float>(timelineClipAlpha(clip, t));
+                if (alpha <= 0.0f)
+                    continue;
+                frame = clip.source->frameAt(std::max(0.0, t - clip.sourceZero));
+            } else {
+                frame = clip.source->frameAt(std::max(0.0, secondsBetween(clip.start, now)));
+                if (clip.fadeSeconds > 0.0)
+                    alpha = static_cast<float>(
+                        std::clamp(secondsBetween(clip.fadeStart, now) / clip.fadeSeconds, 0.0, 1.0));
+            }
             if (!frame)
                 continue;
-            float alpha = 1.0f;
-            if (clip.fadeSeconds > 0.0)
-                alpha = static_cast<float>(
-                    std::clamp(secondsBetween(clip.fadeStart, now) / clip.fadeSeconds, 0.0, 1.0));
             if (alpha <= 0.0f)
                 continue;
             const Placement p = computePlacement(view.rect, frame->width, frame->height, view.fit);

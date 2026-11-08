@@ -16,6 +16,7 @@
 #include "ui/RegionPanel.h"
 #include "ui/ScenePanel.h"
 #include "ui/SchedulePanel.h"
+#include "ui/timeline/TimelineEditor.h"
 
 #include <QAction>
 #include <QApplication>
@@ -75,6 +76,7 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_controller, &ProjectController::contentChanged, this, &MainWindow::onPlaybackContentChanged);
     connect(m_controller, &ProjectController::scenesChanged, this, &MainWindow::onPlaybackContentChanged);
     connect(m_controller, &ProjectController::playbackSettingsChanged, this, &MainWindow::onPlaybackContentChanged);
+    connect(m_controller, &ProjectController::timelineChanged, this, &MainWindow::onPlaybackContentChanged);
     connect(m_controller, &ProjectController::outputsChanged, this, &MainWindow::onOutputsChanged);
     connect(m_controller, &ProjectController::canvasChanged, this, &MainWindow::updateStatus);
     connect(m_controller, &ProjectController::dirtyChanged, this, &MainWindow::updateTitle);
@@ -95,6 +97,7 @@ MainWindow::MainWindow(QWidget* parent)
 
     // 출력 화면이 편집 화면을 가려도 쓸 수 있는 비상 단축키
     setupInteractive();
+    setupTimeline();
 
     m_hotkey = new EmergencyHotkey(this, this);
     connect(m_hotkey, &EmergencyHotkey::triggered, this, &MainWindow::emergencyStop);
@@ -139,7 +142,17 @@ void MainWindow::createDocks()
     logDock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable |
                          QDockWidget::DockWidgetClosable);
     addDockWidget(Qt::BottomDockWidgetArea, logDock);
-    resizeDocks({logDock}, {140}, Qt::Vertical);
+
+    m_timelineEditor = new TimelineEditor(m_controller, this);
+    m_timelineDock = new QDockWidget(QStringLiteral("타임라인"), this);
+    m_timelineDock->setObjectName("timelineDock");
+    m_timelineDock->setWidget(m_timelineEditor);
+    m_timelineDock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable |
+                                QDockWidget::DockWidgetClosable);
+    addDockWidget(Qt::BottomDockWidgetArea, m_timelineDock);
+    tabifyDockWidget(logDock, m_timelineDock);
+    logDock->raise();
+    resizeDocks({logDock}, {230}, Qt::Vertical);
 }
 
 void MainWindow::createActions()

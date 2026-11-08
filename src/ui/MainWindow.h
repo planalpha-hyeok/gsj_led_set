@@ -13,6 +13,7 @@
 #include <vector>
 
 class QAction;
+class QDockWidget;
 class QLabel;
 
 namespace led {
@@ -21,6 +22,7 @@ class CanvasView;
 class EmergencyHotkey;
 class InteractiveHub;
 class InteractivePanel;
+class TimelineEditor;
 class LogPanel;
 class OutputManager;
 class OutputPanel;
@@ -83,6 +85,7 @@ private:
     void startScene(const QString& sceneId, bool showDialog);
     void warnIfPrimaryOutput();
     void setupInteractive();
+    void setupTimeline();
     // 재생 엔진에 넘길 프로젝트 (외부 명령으로 바꾼 자막/표시 적용)
     Project playbackProject() const;
     void refreshPlaybackFromOverrides();
@@ -107,6 +110,9 @@ private:
     EmergencyHotkey* m_hotkey = nullptr;
     bool m_primaryWarningShown = false;
 
+    TimelineEditor* m_timelineEditor = nullptr;
+    QDockWidget* m_timelineDock = nullptr;
+    QTimer m_timelineStatusTimer;
     InteractiveHub* m_hub = nullptr;
     InteractivePanel* m_interactivePanel = nullptr;
     RuntimeOverrides m_overrides;

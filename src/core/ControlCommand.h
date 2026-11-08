@@ -13,19 +13,28 @@
 //   hide <영역>                    숨김       영역 숨김
 //   trigger <이름>                 트리거     트리거 연결표의 명령 실행
 //   reset                          초기화     외부 명령으로 바꾼 자막/표시 상태 되돌림
+//   pause                          일시정지   타임라인 일시정지
+//   go (resume)                    계속       타임라인 이어서 재생 / 큐에서 계속
+//   seek <시각>                    이동       타임라인 위치 이동 (예: 90, 1:30, 1:02:03.5)
 
 #include <string>
 #include <vector>
 
 namespace led {
 
-enum class CommandType { Scene, Play, Stop, Next, Prev, Text, Show, Hide, Trigger, Reset };
+enum class CommandType { Scene, Play, Stop, Next, Prev, Text, Show, Hide, Trigger, Reset, Pause, Go, Seek };
 
 struct ControlCommand {
     CommandType type = CommandType::Play;
     std::string target;                // 장면/영역/트리거 이름
     std::vector<std::string> lines;    // text 명령의 문구들
+    double seconds = 0.0;              // seek 명령의 시각
 };
+
+// "90", "1:30", "1:02:03.5" -> 초. 실패하면 false
+bool parseTimeText(const std::string& text, double& seconds);
+// 초 -> "m:ss.s" 또는 "h:mm:ss.s"
+std::string formatTimeText(double seconds);
 
 bool parseCommand(const std::string& line, ControlCommand& out, std::string& error);
 

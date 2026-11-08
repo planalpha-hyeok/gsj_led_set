@@ -3,6 +3,7 @@
 
 #include "TestUtil.h"
 
+#include "media/AudioOutput.h"
 #include "playback/PlaybackEngine.h"
 
 #include <QColor>
@@ -319,6 +320,177 @@ static void testLivePlaylist()
     engine.stop();
 }
 
+static TimelineClip tclip(const std::string& id, const std::string& path, double start, double dur)
+{
+    TimelineClip c;
+    c.id = id;
+    c.source = path;
+    c.start = start;
+    c.duration = dur;
+    return c;
+}
+
+static Project timelineProject(Timeline tl)
+{
+    Project p = baseProject();
+    p.scenes[0].kind = SceneKind::Timeline;
+    p.scenes[0].timeline = std::move(tl);
+    return p;
+}
+
+static TimelineLayer tlayer(const std::string& id, std::vector<TimelineClip> clips)
+{
+    TimelineLayer l;
+    l.id = id;
+    l.regionId = "r";
+    l.clips = std::move(clips);
+    return l;
+}
+
+static void testTimelineBasic(const std::string& red, const std::string& blue)
+{
+    Timeline tl;
+    tl.layers = {tlayer("L1", {tclip("a", red, 0.0, 0.5), tclip("b", blue, 0.5, 0.5)})};
+    tl.endAction = TimelineEnd::Hold;
+    PlaybackEngine engine;
+    std::vector<std::string> errors;
+    engine.play(timelineProject(tl), "s", errors);
+    CHECK(errors.empty());
+    CHECK(engine.timelineStatus().active);
+    CHECK(waitFor(engine, 300, [](const auto& l) { return singleColor(l, 'R'); }));
+    CHECK(waitFor(engine, 1000, [](const auto& l) { return singleColor(l, 'B'); }));
+    // 끝: 마지막 화면 유지 + 멈춤
+    std::this_thread::sleep_for(std::chrono::milliseconds(700));
+    CHECK(waitFor(engine, 50, [](const auto& l) { return singleColor(l, 'B'); }));
+    TimelineStatus st = engine.timelineStatus();
+    CHECK(!st.running && st.time > 0.9 && st.time <= 1.0 && test::near(st.length, 1.0));
+
+    // 이동 + 일시정지: 0.2초로 가서 멈추면 빨강 유지
+    CHECK(engine.timelineSeek(0.2));
+    CHECK(engine.timelinePause());
+    CHECK(waitFor(engine, 1000, [](const auto& l) { return singleColor(l, 'R'); }));
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    st = engine.timelineStatus();
+    CHECK(!st.running && test::near(st.time, 0.2, 1e-6));
+    CHECK(waitFor(engine, 50, [](const auto& l) { return singleColor(l, 'R'); }));
+    // 이어서 재생
+    CHECK(engine.timelineResume());
+    CHECK(waitFor(engine, 1000, [](const auto& l) { return singleColor(l, 'B'); }));
+    engine.stop();
+    CHECK(!engine.timelineStatus().active);
+    CHECK(!engine.timelinePause());
+}
+
+static void testTimelineLayersFadeCue(const std::string& red, const std::string& blue)
+{
+    // 레이어 0(위)=파랑 0.3~2초 (페이드 인 0.4초), 레이어 1(아래)=빨강 0~2초. 큐 1.0초
+    TimelineClip top = tclip("top", blue, 0.3, 1.7);
+    top.fadeIn = 0.4;
+    Timeline tl;
+    tl.layers = {tlayer("L0", {top}), tlayer("L1", {tclip("bottom", red, 0.0, 2.0)})};
+    TimelineCue cue;
+    cue.id = "c";
+    cue.name = "막1";
+    cue.time = 1.0;
+    tl.cues = {cue};
+    PlaybackEngine engine;
+    std::vector<std::string> errors;
+    engine.play(timelineProject(tl), "s", errors);
+
+    // 페이드 중: 아래 빨강 + 위 파랑(반투명), 위 레이어가 나중(위)에 그려짐
+    CHECK(waitFor(engine, 1500, [](const auto& l) {
+        return l.size() == 2 && frameColor(*l[0].frame) == 'R' && frameColor(*l[1].frame) == 'B' &&
+               l[1].opacity > 0.05f && l[1].opacity < 0.95f;
+    }));
+    // 큐에서 멈춤
+    CHECK(waitFor(engine, 2000, [&](const auto&) {
+        const TimelineStatus st = engine.timelineStatus();
+        return !st.running && st.waitingCue == "막1";
+    }));
+    CHECK(test::near(engine.timelineStatus().time, 1.0, 1e-6));
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    CHECK(test::near(engine.timelineStatus().time, 1.0, 1e-6)); // 계속 대기
+    CHECK(engine.timelineResume());                              // GO
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    const TimelineStatus st = engine.timelineStatus();
+    CHECK(st.running && st.time > 1.05 && st.waitingCue.empty());
+    engine.stop();
+}
+
+static void testTimelineEndActions(const std::string& red)
+{
+    {
+        Timeline tl;
+        tl.layers = {tlayer("L", {tclip("a", red, 0.0, 0.3)})};
+        tl.endAction = TimelineEnd::Loop;
+        PlaybackEngine engine;
+        std::vector<std::string> errors;
+        engine.play(timelineProject(tl), "s", errors);
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        const TimelineStatus st = engine.timelineStatus();
+        CHECK(st.running && st.time < 0.3); // 처음으로 돌아감
+        CHECK(waitFor(engine, 300, [](const auto& l) { return singleColor(l, 'R'); }));
+        engine.stop();
+    }
+    {
+        Timeline tl;
+        tl.layers = {tlayer("L", {tclip("a", red, 0.0, 0.3)})};
+        tl.endAction = TimelineEnd::Stop;
+        PlaybackEngine engine;
+        std::vector<std::string> errors;
+        engine.play(timelineProject(tl), "s", errors);
+        CHECK(waitFor(engine, 1000, [&](const auto& l) { return l.empty() && engine.timelineStatus().finished; }));
+        CHECK(engine.timelineResume()); // 정지 후 계속 = 처음부터
+        CHECK(waitFor(engine, 500, [](const auto& l) { return singleColor(l, 'R'); }));
+        engine.stop();
+    }
+}
+
+static void testTimelineEditAndHidden(const std::string& red, const std::string& blue)
+{
+    Timeline tl;
+    tl.layers = {tlayer("L", {tclip("a", red, 0.0, 5.0)})};
+    Project p = timelineProject(tl);
+    PlaybackEngine engine;
+    std::vector<std::string> errors;
+    engine.play(p, "s", errors);
+    CHECK(waitFor(engine, 300, [](const auto& l) { return singleColor(l, 'R'); }));
+    // 재생 중 클립 파일 교체 -> 바로 반영
+    p.scenes[0].timeline.layers[0].clips[0].source = blue;
+    engine.update(p, errors);
+    CHECK(waitFor(engine, 1000, [](const auto& l) { return singleColor(l, 'B'); }));
+    // 레이어 표시 끔 -> 사라짐
+    p.scenes[0].timeline.layers[0].visible = false;
+    engine.update(p, errors);
+    CHECK(waitFor(engine, 500, [](const auto& l) { return l.empty(); }));
+    engine.stop();
+}
+
+static void testTimelineVideoAudio(const std::string& video, const std::string& audio)
+{
+    // 영상 클립(자르기 0.5초) + 소리 클립 0.2~0.8초
+    TimelineClip v = tclip("v", video, 0.0, 0.5);
+    v.inPoint = 0.5;
+    TimelineClip a = tclip("snd", audio, 0.2, 0.6);
+    a.volume = 0.5;
+    TimelineLayer soundLayer;
+    soundLayer.id = "S";
+    soundLayer.clips = {a}; // 영역 없음: 소리만
+    Timeline tl;
+    tl.layers = {tlayer("V", {v}), soundLayer};
+    tl.endAction = TimelineEnd::Stop; // 끝나면 정지: 소리 트랙도 정리되어야 함
+    PlaybackEngine engine;
+    std::vector<std::string> errors;
+    engine.play(timelineProject(tl), "s", errors);
+    CHECK(errors.empty());
+    CHECK(waitFor(engine, 500, [](const auto& l) { return l.size() == 1 && l[0].frame->width == 320; }));
+    CHECK(waitFor(engine, 1500, [](const auto&) { return AudioOutput::instance().trackCount() >= 1; }));
+    // 끝난 뒤 소리 트랙 정리
+    CHECK(waitFor(engine, 2000, [&](const auto&) { return engine.timelineStatus().finished; }));
+    CHECK(AudioOutput::instance().trackCount() == 0);
+    engine.stop();
+}
+
 static void testVideoEnd(const std::string& video, const std::string& blue)
 {
     // 자동 길이 영상(약 1초) 다음 항목으로 넘어가는지
@@ -358,6 +530,12 @@ int main(int argc, char* argv[])
     testSharedFrame(red);
     testSkip(red, blue);
     testLivePlaylist();
+    testTimelineBasic(red, blue);
+    testTimelineLayersFadeCue(red, blue);
+    testTimelineEndActions(red);
+    testTimelineEditAndHidden(red, blue);
+    if (argc > 2)
+        testTimelineVideoAudio(argv[1], argv[2]);
     if (argc > 1)
         testVideoEnd(argv[1], blue);
     else

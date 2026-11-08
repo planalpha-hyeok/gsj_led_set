@@ -7,6 +7,7 @@
 
 #include "core/Project.h"
 #include "playback/RegionView.h"
+#include "playback/TimelinePlayer.h"
 #include "render/Scene.h"
 
 #include <atomic>
@@ -42,6 +43,12 @@ public:
 
     // 플레이리스트 다음(+1)/이전(-1) 항목. 해당 영역이 재생 중인 플레이리스트가 아니면 false
     bool skip(const std::string& regionId, int delta);
+
+    // 타임라인 장면 제어 (타임라인 장면이 아니면 false)
+    bool timelinePause();
+    bool timelineResume();          // 이어서 재생 / 큐에서 GO
+    bool timelineSeek(double seconds);
+    TimelineStatus timelineStatus() const;
     std::string sceneId() const;
 
     // 출력 화면 갱신 시점이 6ms 이내로 가까운 출력들은 같은 계산 결과(같은 프레임)를 공유
@@ -64,6 +71,7 @@ private:
     // 재생 상태 (제어 스레드와 GUI 스레드가 공유)
     mutable std::mutex m_slotMutex;
     std::vector<std::unique_ptr<Slot>> m_slots;
+    std::unique_ptr<TimelinePlayer> m_timelinePlayer;   // 타임라인 장면일 때
     std::string m_sceneId;
     bool m_playing = false;
 

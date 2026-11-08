@@ -3,6 +3,7 @@
 #include "core/Project.h"
 #include "ui/ProjectController.h"
 
+#include <QComboBox>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -33,17 +34,23 @@ ScenePanel::ScenePanel(ProjectController* controller, QWidget* parent)
 
     auto* buttons = new QHBoxLayout;
     m_addButton = new QPushButton(QStringLiteral("추가"), this);
+    m_addTimelineButton = new QPushButton(QStringLiteral("타임라인 추가"), this);
+    m_addTimelineButton->setToolTip(QStringLiteral("시간축에 영상/이미지/소리를 배치하는 큐 타임라인 장면"));
     m_duplicateButton = new QPushButton(QStringLiteral("복제"), this);
     m_removeButton = new QPushButton(QStringLiteral("삭제"), this);
     m_upButton = new QPushButton(QStringLiteral("위로"), this);
     m_downButton = new QPushButton(QStringLiteral("아래로"), this);
-    for (QPushButton* b : {m_addButton, m_duplicateButton, m_removeButton, m_upButton, m_downButton})
+    for (QPushButton* b : {m_addButton, m_addTimelineButton, m_duplicateButton, m_removeButton, m_upButton, m_downButton})
         buttons->addWidget(b);
     layout->addLayout(buttons);
 
     auto* form = new QFormLayout;
     m_name = new QLineEdit(this);
     form->addRow(QStringLiteral("이름"), m_name);
+    m_kind = new QComboBox(this);
+    m_kind->addItem(QStringLiteral("영역별 (플레이리스트/자막)"), int(SceneKind::Regions));
+    m_kind->addItem(QStringLiteral("타임라인"), int(SceneKind::Timeline));
+    form->addRow(QStringLiteral("종류"), m_kind);
     layout->addLayout(form);
 
     m_playButton = new QPushButton(QStringLiteral("▶ 이 장면 재생"), this);
@@ -62,6 +69,11 @@ ScenePanel::ScenePanel(ProjectController* controller, QWidget* parent)
             m_controller->setEditingScene(id);
     });
     connect(m_addButton, &QPushButton::clicked, this, [this] { m_controller->addScene(); });
+    connect(m_addTimelineButton, &QPushButton::clicked, this,
+            [this] { m_controller->addScene(SceneKind::Timeline); });
+    connect(m_kind, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this] {
+        m_controller->setSceneKind(m_controller->editingSceneId(), static_cast<SceneKind>(m_kind->currentData().toInt()));
+    });
     connect(m_duplicateButton, &QPushButton::clicked, this,
             [this] { m_controller->duplicateScene(m_controller->editingSceneId()); });
     connect(m_removeButton, &QPushButton::clicked, this, [this] {
@@ -118,6 +130,8 @@ void ScenePanel::refresh()
             ++index;
             const QString id = QString::fromStdString(s.id);
             QString text = QStringLiteral("%1. %2").arg(index).arg(QString::fromStdString(s.name));
+            if (s.kind == SceneKind::Timeline)
+                text += QStringLiteral("   [타임라인]");
             if (id == m_playingScene)
                 text += QStringLiteral("   ▶ 재생 중");
             auto* item = new QListWidgetItem(text, m_list);
@@ -135,6 +149,10 @@ void ScenePanel::refresh()
     }
     const Scene* scene = m_controller->editingScene();
     m_name->setText(scene ? QString::fromStdString(scene->name) : QString());
+    {
+        const QSignalBlocker blocker(m_kind);
+        m_kind->setCurrentIndex(scene && scene->kind == SceneKind::Timeline ? 1 : 0);
+    }
     m_removeButton->setEnabled(project.scenes.size() > 1);
 }
 

@@ -85,7 +85,70 @@ struct TickerConfig {
     bool operator!=(const TickerConfig& o) const { return !(*this == o); }
 };
 
+// ---------------------------------------------------------------- 타임라인
+
+// 시간축 위의 클립 1개 (영상/이미지/소리 파일)
+struct TimelineClip {
+    std::string id;
+    std::string source;          // 파일 경로
+    double start = 0.0;          // 타임라인 시작 시각(초)
+    double duration = 5.0;       // 타임라인에서 차지하는 길이(초)
+    double inPoint = 0.0;        // 자르기: 파일의 몇 초부터 사용
+    double fadeIn = 0.0;         // 초
+    double fadeOut = 0.0;        // 초
+    double opacity = 1.0;        // 0 ~ 1
+    double volume = 1.0;         // 0 ~ 1 (소리)
+    bool loop = false;           // 파일이 클립보다 짧으면 자르기 지점부터 반복
+
+    double end() const { return start + duration; }
+    bool operator==(const TimelineClip& o) const;
+    bool operator!=(const TimelineClip& o) const { return !(*this == o); }
+};
+
+struct TimelineLayer {
+    std::string id;
+    std::string name;
+    std::string regionId;        // 표시할 영역 (소리만 있는 레이어는 비워도 됨)
+    bool visible = true;         // 끄면 화면에 표시 안 함
+    bool muted = false;          // 소리 끔
+    bool locked = false;         // 편집 잠금
+    std::vector<TimelineClip> clips;
+
+    bool operator==(const TimelineLayer& o) const;
+    bool operator!=(const TimelineLayer& o) const { return !(*this == o); }
+};
+
+// 큐 지점: 재생 중 이 시각에 도달하면 멈추고 GO 명령을 기다림
+struct TimelineCue {
+    std::string id;
+    std::string name;
+    double time = 0.0;
+
+    bool operator==(const TimelineCue& o) const { return id == o.id && name == o.name && time == o.time; }
+};
+
+enum class TimelineEnd {
+    Hold,   // 마지막 화면 유지
+    Loop,   // 처음부터 반복
+    Stop    // 정지 (검은 화면)
+};
+
+struct Timeline {
+    std::vector<TimelineLayer> layers;   // 0번이 맨 위(화면 앞)
+    std::vector<TimelineCue> cues;
+    TimelineEnd endAction = TimelineEnd::Hold;
+
+    double length() const;               // 마지막 클립이 끝나는 시각
+    bool operator==(const Timeline& o) const;
+    bool operator!=(const Timeline& o) const { return !(*this == o); }
+};
+
 // ---------------------------------------------------------------- 장면
+
+enum class SceneKind {
+    Regions,   // 영역별 플레이리스트/자막
+    Timeline   // 큐 타임라인
+};
 
 enum class ContentKind { Playlist, Ticker };
 
@@ -104,7 +167,9 @@ struct RegionContent {
 struct Scene {
     std::string id;
     std::string name;
-    std::vector<RegionContent> contents;
+    SceneKind kind = SceneKind::Regions;
+    std::vector<RegionContent> contents;   // kind == Regions
+    Timeline timeline;                     // kind == Timeline
 
     RegionContent* contentFor(const std::string& regionId);
     const RegionContent* contentFor(const std::string& regionId) const;
@@ -198,6 +263,8 @@ const char* fitModeKey(FitMode mode);
 bool fitModeFromKey(const std::string& key, FitMode& out);
 const char* transitionKey(TransitionType t);
 bool transitionFromKey(const std::string& key, TransitionType& out);
+const char* timelineEndKey(TimelineEnd e);
+bool timelineEndFromKey(const std::string& key, TimelineEnd& out);
 const char* decodeModeKey(DecodeMode m);
 bool decodeModeFromKey(const std::string& key, DecodeMode& out);
 // 영역에 실제로 적용할 디코딩 방식 (true = 하드웨어)

@@ -119,6 +119,9 @@ void ProjectController::removeRegion(const QString& id)
         c.erase(std::remove_if(c.begin(), c.end(),
                                [&](const RegionContent& rc) { return rc.regionId == id.toStdString(); }),
                 c.end());
+        for (TimelineLayer& layer : scene.timeline.layers)
+            if (layer.regionId == id.toStdString())
+                layer.regionId.clear(); // 영역이 없어진 레이어는 소리만 재생
     }
     if (m_selectedRegion == id)
         m_selectedRegion = regions.empty() ? QString() : QString::fromStdString(regions.back().id);
@@ -253,11 +256,21 @@ void ProjectController::setEditingScene(const QString& id)
     emit editingSceneChanged(id);
 }
 
-QString ProjectController::addScene()
+QString ProjectController::addScene(SceneKind kind)
 {
     Scene scene;
     scene.id = generateId();
-    scene.name = "장면 " + std::to_string(m_project.scenes.size() + 1);
+    scene.kind = kind;
+    scene.name = (kind == SceneKind::Timeline ? "타임라인 " : "장면 ") + std::to_string(m_project.scenes.size() + 1);
+    if (kind == SceneKind::Timeline) {
+        TimelineLayer layer;
+        layer.id = generateId();
+        layer.name = "레이어 1";
+        layer.regionId = m_selectedRegion.toStdString();
+        if (!m_project.findRegion(layer.regionId) && !m_project.regions.empty())
+            layer.regionId = m_project.regions.front().id;
+        scene.timeline.layers.push_back(layer);
+    }
     m_project.scenes.push_back(scene);
     setDirty(true);
     emit scenesChanged();
@@ -400,6 +413,34 @@ void ProjectController::setInteractive(const InteractiveConfig& config)
     m_project.interactive = config;
     setDirty(true);
     emit interactiveChanged();
+}
+
+void ProjectController::setSceneKind(const QString& id, SceneKind kind)
+{
+    Scene* scene = m_project.findScene(id.toStdString());
+    if (!scene || scene->kind == kind)
+        return;
+    scene->kind = kind;
+    if (kind == SceneKind::Timeline && scene->timeline.layers.empty()) {
+        TimelineLayer layer;
+        layer.id = generateId();
+        layer.name = "레이어 1";
+        layer.regionId = m_project.regions.empty() ? std::string() : m_project.regions.front().id;
+        scene->timeline.layers.push_back(layer);
+    }
+    setDirty(true);
+    emit scenesChanged();
+    emit timelineChanged(id);
+}
+
+void ProjectController::setTimeline(const QString& sceneId, const Timeline& timeline)
+{
+    Scene* scene = m_project.findScene(sceneId.toStdString());
+    if (!scene || scene->timeline == timeline)
+        return;
+    scene->timeline = timeline;
+    setDirty(true);
+    emit timelineChanged(sceneId);
 }
 
 } // namespace led

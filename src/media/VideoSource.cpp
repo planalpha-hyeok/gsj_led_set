@@ -131,6 +131,7 @@ struct VideoSource::Impl {
     std::string inputFormat;
     std::string liveSize;
     double liveFps = 0.0;
+    double startTime = 0.0;          // 재생 시작 위치(초). 프레임 시각 0 = 이 위치
     AVPixelFormat hwPixelFormat = AV_PIX_FMT_NONE;
     std::string hwName;              // 사용 중인 하드웨어 종류 (비어 있으면 CPU)
     std::atomic<bool> hwFallback{false};
@@ -239,7 +240,14 @@ struct VideoSource::Impl {
         std::string decoderInfo;
         if (!openInput(error, decoderInfo))
             return false;
-        logInfo((live ? "라이브 입력 열기: " : "영상 열기: ") + path + " (" + decoderInfo + ")");
+        if (!live && startTime > 0.0) {
+            if (!rewind())
+                logWarning("시작 위치로 이동하지 못해 처음부터 재생: " + path);
+            if (durationHint > 0.0)
+                durationHint = std::max(0.0, durationHint - startTime);
+        }
+        logInfo((live ? "라이브 입력 열기: " : "영상 열기: ") + path + " (" + decoderInfo +
+                (startTime > 0.0 ? ", " + std::to_string(startTime) + "초부터" : std::string()) + ")");
         thread = std::thread([this] { run(); });
         return true;
     }
@@ -429,9 +437,11 @@ struct VideoSource::Impl {
         return true;
     }
 
+    // 시작 위치(startTime)로 이동. 그 앞의 프레임은 run()에서 버림
     bool rewind()
     {
-        int r = av_seek_frame(format, streamIndex, streamStart, AVSEEK_FLAG_BACKWARD);
+        const int64_t target = streamStart + static_cast<int64_t>(startTime / timeBase);
+        int r = av_seek_frame(format, streamIndex, target, AVSEEK_FLAG_BACKWARD);
         if (r < 0)
             r = avformat_seek_file(format, -1, INT64_MIN, 0, INT64_MAX, 0);
         if (r < 0) {
@@ -534,9 +544,15 @@ struct VideoSource::Impl {
                     duration = durTicks * timeBase;
 
                 double t;
-                if (ts != AV_NOPTS_VALUE)
-                    t = loopOffset + std::max(0.0, (ts - streamStart) * timeBase);
-                else
+                if (ts != AV_NOPTS_VALUE) {
+                    const double mediaTime = (ts - streamStart) * timeBase;
+                    // 시작 위치 앞의 프레임(키프레임부터 디코딩된 부분)은 표시하지 않음
+                    if (startTime > 0.0 && mediaTime + duration * 0.5 < startTime) {
+                        av_frame_unref(frame);
+                        continue;
+                    }
+                    t = loopOffset + std::max(0.0, mediaTime - startTime);
+                } else
                     t = lastTime < 0.0 ? loopOffset : lastTime + defaultFrameDuration;
                 if (t < lastTime) // 시간 역행 방지
                     t = lastTime;
@@ -628,6 +644,7 @@ VideoSource::VideoSource(std::string path, VideoOptions options)
     d->inputFormat = options.inputFormat;
     d->liveSize = options.liveSize;
     d->liveFps = options.liveFps;
+    d->startTime = std::max(0.0, options.startTime);
 }
 
 std::uint64_t VideoSource::droppedFrames() const

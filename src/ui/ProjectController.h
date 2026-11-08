@@ -43,7 +43,10 @@ public:
     QString editingSceneId() const { return m_editingScene; }
     const Scene* editingScene() const;
     void setEditingScene(const QString& id);
-    QString addScene();
+    QString addScene(SceneKind kind = SceneKind::Regions);
+    void setSceneKind(const QString& id, SceneKind kind);
+    // 타임라인 장면 편집
+    void setTimeline(const QString& sceneId, const Timeline& timeline);
     QString duplicateScene(const QString& id);
     void renameScene(const QString& id, const QString& name);
     bool removeScene(const QString& id); // 마지막 장면은 삭제 불가
@@ -77,6 +80,7 @@ signals:
     void scheduleChanged();
     void playbackSettingsChanged();
     void interactiveChanged();
+    void timelineChanged(const QString& sceneId);
 
 private:
     void setDirty(bool dirty);

@@ -71,6 +71,19 @@ static void testCommands()
     c = parse("text 하단"); // 문구 없음 = 자막 비움
     CHECK(c.type == CommandType::Text && c.lines.empty());
 
+    c = parse("seek 1:30");
+    CHECK(c.type == CommandType::Seek && test::near(c.seconds, 90.0));
+    c = parse("이동 1:02:03.5");
+    CHECK(c.type == CommandType::Seek && test::near(c.seconds, 3723.5));
+    CHECK(parse("pause").type == CommandType::Pause);
+    CHECK(parse("계속").type == CommandType::Go);
+    CHECK(parse("GO").type == CommandType::Go);
+    parse("seek 1:75", false);
+    parse("seek abc", false);
+    parse("seek", false);
+    CHECK(formatTimeText(90.04) == "1:30.0");
+    CHECK(formatTimeText(3723.5) == "1:02:03.5");
+
     parse("", false);
     parse("scene", false);
     parse("next", false);

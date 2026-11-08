@@ -1,5 +1,6 @@
 #include "core/Project.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <mutex>
@@ -22,6 +23,32 @@ bool TickerConfig::operator==(const TickerConfig& o) const
            outlineWidth == o.outlineWidth && outlineColor == o.outlineColor && shadow == o.shadow &&
            shadowOffset == o.shadowOffset && shadowColor == o.shadowColor && speed == o.speed &&
            direction == o.direction && gap == o.gap;
+}
+
+bool TimelineClip::operator==(const TimelineClip& o) const
+{
+    return id == o.id && source == o.source && start == o.start && duration == o.duration && inPoint == o.inPoint &&
+           fadeIn == o.fadeIn && fadeOut == o.fadeOut && opacity == o.opacity && volume == o.volume && loop == o.loop;
+}
+
+bool TimelineLayer::operator==(const TimelineLayer& o) const
+{
+    return id == o.id && name == o.name && regionId == o.regionId && visible == o.visible && muted == o.muted &&
+           locked == o.locked && clips == o.clips;
+}
+
+double Timeline::length() const
+{
+    double len = 0.0;
+    for (const auto& layer : layers)
+        for (const auto& clip : layer.clips)
+            len = std::max(len, clip.end());
+    return len;
+}
+
+bool Timeline::operator==(const Timeline& o) const
+{
+    return layers == o.layers && cues == o.cues && endAction == o.endAction;
 }
 
 bool RegionContent::isEmpty() const
@@ -131,6 +158,24 @@ bool transitionFromKey(const std::string& key, TransitionType& out)
 {
     if (key == "cut") { out = TransitionType::Cut; return true; }
     if (key == "fade") { out = TransitionType::Fade; return true; }
+    return false;
+}
+
+const char* timelineEndKey(TimelineEnd e)
+{
+    switch (e) {
+    case TimelineEnd::Hold: return "hold";
+    case TimelineEnd::Loop: return "loop";
+    case TimelineEnd::Stop: return "stop";
+    }
+    return "hold";
+}
+
+bool timelineEndFromKey(const std::string& key, TimelineEnd& out)
+{
+    if (key == "hold") { out = TimelineEnd::Hold; return true; }
+    if (key == "loop") { out = TimelineEnd::Loop; return true; }
+    if (key == "stop") { out = TimelineEnd::Stop; return true; }
     return false;
 }
 

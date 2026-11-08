@@ -13,7 +13,7 @@ endif()
 if(NOT FFMPEG_ROOT)
     find_package(PkgConfig QUIET)
     if(PKG_CONFIG_FOUND)
-        pkg_check_modules(PC_FFMPEG QUIET IMPORTED_TARGET libavformat libavcodec libavutil libswscale libavdevice)
+        pkg_check_modules(PC_FFMPEG QUIET IMPORTED_TARGET libavformat libavcodec libavutil libswscale libswresample libavdevice)
         if(PC_FFMPEG_FOUND)
             if(NOT TARGET FFmpeg::FFmpeg)
                 add_library(FFmpeg::FFmpeg INTERFACE IMPORTED)
@@ -30,7 +30,7 @@ find_path(FFMPEG_INCLUDE_DIR libavcodec/avcodec.h
     HINTS "${FFMPEG_ROOT}"
     PATH_SUFFIXES include)
 
-set(_ffmpeg_libs avdevice avformat avcodec avutil swscale)
+set(_ffmpeg_libs avdevice avformat avcodec avutil swscale swresample)
 set(_ffmpeg_lib_vars)
 foreach(_lib IN LISTS _ffmpeg_libs)
     find_library(FFMPEG_${_lib}_LIBRARY NAMES ${_lib}

@@ -65,6 +65,16 @@ void ContentEditor::reload()
     setEnabled(valid);
     m_sceneLabel->setText(scene ? QStringLiteral("편집 중인 장면: %1").arg(QString::fromStdString(scene->name))
                                 : QString());
+    if (scene && scene->kind == SceneKind::Timeline) {
+        m_sceneLabel->setText(QStringLiteral("편집 중인 장면 '%1'은(는) 타임라인 장면입니다.\n"
+                                             "콘텐츠는 아래 '타임라인' 창에서 편집하세요.")
+                                  .arg(QString::fromStdString(scene->name)));
+        m_kind->setEnabled(false);
+        m_stack->setEnabled(false);
+        return;
+    }
+    m_kind->setEnabled(true);
+    m_stack->setEnabled(true);
     if (!valid)
         return;
 
