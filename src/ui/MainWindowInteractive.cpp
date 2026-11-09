@@ -5,6 +5,7 @@
 #include "core/ControlCommand.h"
 #include "core/Log.h"
 #include "interactive/InteractiveHub.h"
+#include "media/AudioOutput.h"
 #include "output/OutputManager.h"
 #include "playback/PlaybackEngine.h"
 #include "schedule/ScheduleRunner.h"
@@ -240,6 +241,12 @@ void MainWindow::onCanvasClicked(int x, int y)
 
 void MainWindow::setupTimeline()
 {
+    // 소리 출력 장치: 프로젝트 설정 적용
+    auto applyAudioDevice = [this] { AudioOutput::instance().setDevice(m_controller->project().audioDevice); };
+    connect(m_controller, &ProjectController::playbackSettingsChanged, this, applyAudioDevice);
+    connect(m_controller, &ProjectController::projectReset, this, applyAudioDevice);
+    applyAudioDevice();
+
     connect(m_timelineEditor, &TimelineEditor::playPauseRequested, this, [this](const QString& sceneId, double from) {
         if (m_engine->isPlaying() && QString::fromStdString(m_engine->sceneId()) == sceneId) {
             const TimelineStatus st = m_engine->timelineStatus();

@@ -28,6 +28,7 @@ static Project makeSample()
     r2.decode = DecodeMode::Software;
     p.regions.push_back(r2);
     p.hardwareDecoding = false;
+    p.audioDevice = "스피커 (USB Audio)";
 
     Scene s;
     s.id = "s1";
@@ -198,6 +199,7 @@ static void testRoundTrip()
     }
     CHECK(loaded.autoStart);
     CHECK(!loaded.hardwareDecoding);
+    CHECK(loaded.audioDevice == "스피커 (USB Audio)");
 
     CHECK(loaded.outputs.size() == 1);
     if (loaded.outputs.size() == 1) {

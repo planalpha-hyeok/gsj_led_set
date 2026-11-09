@@ -443,4 +443,13 @@ void ProjectController::setTimeline(const QString& sceneId, const Timeline& time
     emit timelineChanged(sceneId);
 }
 
+void ProjectController::setAudioDevice(const QString& name)
+{
+    if (m_project.audioDevice == name.toStdString())
+        return;
+    m_project.audioDevice = name.toStdString();
+    setDirty(true);
+    emit playbackSettingsChanged();
+}
+
 } // namespace led

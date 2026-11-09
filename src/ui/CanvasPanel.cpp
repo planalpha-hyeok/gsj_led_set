@@ -1,10 +1,14 @@
 #include "ui/CanvasPanel.h"
 
 #include "config/ProjectSerializer.h"
+#include "media/AudioOutput.h"
 #include "ui/FormHelpers.h"
 #include "ui/ProjectController.h"
 
 #include <QCheckBox>
+#include <QComboBox>
+#include <QHBoxLayout>
+#include <QSignalBlocker>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QLabel>
@@ -48,6 +52,26 @@ CanvasPanel::CanvasPanel(ProjectController* controller, QWidget* parent)
     hwHint->setObjectName("hintLabel");
     hwHint->setWordWrap(true);
     playbackLayout->addWidget(hwHint);
+
+    auto* audioRow = new QHBoxLayout;
+    audioRow->addWidget(new QLabel(QStringLiteral("소리 출력 장치"), playback));
+    m_audioDevice = new QComboBox(playback);
+    m_audioDevice->setMinimumWidth(200);
+    auto* refreshAudio = new QPushButton(QStringLiteral("다시 찾기"), playback);
+    audioRow->addWidget(m_audioDevice, 1);
+    audioRow->addWidget(refreshAudio);
+    playbackLayout->addLayout(audioRow);
+    auto* audioHint = new QLabel(QStringLiteral("타임라인의 소리가 이 장치로 나옵니다. 지정한 장치가 없으면 기본 장치로 출력합니다."),
+                                 playback);
+    audioHint->setObjectName("hintLabel");
+    audioHint->setWordWrap(true);
+    playbackLayout->addWidget(audioHint);
+    connect(refreshAudio, &QPushButton::clicked, this, &CanvasPanel::refreshAudioDevices);
+    connect(controller, &ProjectController::projectReset, this, &CanvasPanel::refreshAudioDevices);
+    connect(m_audioDevice, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this] {
+        if (!m_loading)
+            m_controller->setAudioDevice(m_audioDevice->currentData().toString());
+    });
     layout->addWidget(playback);
 
     m_summary = new QLabel(this);
@@ -77,6 +101,7 @@ CanvasPanel::CanvasPanel(ProjectController* controller, QWidget* parent)
     connect(controller, &ProjectController::canvasChanged, this, &CanvasPanel::load);
     connect(controller, &ProjectController::outputsChanged, this, &CanvasPanel::load);
     connect(controller, &ProjectController::regionsChanged, this, &CanvasPanel::load);
+    refreshAudioDevices();
     load();
 }
 
@@ -88,6 +113,7 @@ void CanvasPanel::load()
     m_height->setValue(p.canvas.height);
     m_hardwareDecoding->setChecked(p.hardwareDecoding);
     m_loading = false;
+    selectAudioDevice();
 
     int enabled = 0;
     for (const auto& o : p.outputs)
@@ -98,6 +124,41 @@ void CanvasPanel::load()
                            .arg(static_cast<int>(p.outputs.size()))
                            .arg(enabled)
                            .arg(megapixels, 0, 'f', 2));
+}
+
+void CanvasPanel::refreshAudioDevices()
+{
+    std::string error;
+    const std::vector<AudioDeviceInfo> devices = AudioOutput::instance().devices(&error);
+    const bool wasLoading = m_loading;
+    m_loading = true;
+    m_audioDevice->clear();
+    m_audioDevice->addItem(QStringLiteral("기본 장치 (Windows 설정)"), QString());
+    for (const AudioDeviceInfo& d : devices) {
+        const QString name = QString::fromStdString(d.name);
+        m_audioDevice->addItem(d.isDefault ? name + QStringLiteral("  (기본)") : name, name);
+    }
+    m_audioDevice->setToolTip(error.empty() ? QString() : QString::fromStdString(error));
+    m_loading = wasLoading;
+    selectAudioDevice();
+}
+
+void CanvasPanel::selectAudioDevice()
+{
+    const QString wanted = QString::fromStdString(m_controller->project().audioDevice);
+    const bool wasLoading = m_loading;
+    m_loading = true;
+    // 이전에 넣은 '(연결 안 됨)' 항목 정리
+    for (int i = m_audioDevice->count() - 1; i > 0; --i)
+        if (m_audioDevice->itemText(i).endsWith(QStringLiteral("(연결 안 됨)")))
+            m_audioDevice->removeItem(i);
+    int index = m_audioDevice->findData(wanted);
+    if (index < 0) {
+        m_audioDevice->addItem(QStringLiteral("%1  (연결 안 됨)").arg(wanted), wanted);
+        index = m_audioDevice->count() - 1;
+    }
+    m_audioDevice->setCurrentIndex(index);
+    m_loading = wasLoading;
 }
 
 void CanvasPanel::commit()

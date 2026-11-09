@@ -126,7 +126,25 @@ int main(int argc, char* argv[])
         std::string devError;
         const bool started = out.ensureStarted(&devError);
         std::printf("소리 장치: %s\n", started ? "시작됨" : devError.c_str());
+        // 장치 목록과 선택
+        std::string listError;
+        const auto list = out.devices(&listError);
+        std::printf("소리 장치 %d개%s\n", static_cast<int>(list.size()), listError.c_str());
+        for (const auto& d : list)
+            std::printf("  - %s%s\n", d.name.c_str(), d.isDefault ? " (기본)" : "");
+        if (started && !list.empty()) {
+            out.setDevice(list.front().name); // 재생 중 장치 바꾸기
+            CHECK(out.isStarted());
+            CHECK(out.currentDeviceName() == list.front().name);
+            CHECK(out.requestedDevice() == list.front().name);
+        }
+        out.setDevice("__없는장치__"); // 없으면 기본 장치로
+        if (started)
+            CHECK(out.isStarted() && !out.currentDeviceName().empty());
+        out.setDevice("");
+        CHECK(out.requestedDevice().empty());
         out.shutdown();
+        CHECK(!out.isStarted());
     }
     return test::finish("test_audio");
 }

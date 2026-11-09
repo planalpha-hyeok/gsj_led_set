@@ -448,6 +448,7 @@ QByteArray projectToJson(const Project& project)
     root["outputs"] = outputs;
     root["autoStart"] = project.autoStart;
     root["hardwareDecoding"] = project.hardwareDecoding;
+    root["audioDevice"] = qs(project.audioDevice);
     root["interactive"] = interactiveToJson(project.interactive);
 
     return QJsonDocument(root).toJson(QJsonDocument::Indented);
@@ -522,6 +523,7 @@ bool projectFromJson(const QByteArray& json, Project& out, QString* error)
         }
         p.autoStart = root.value("autoStart").toBool(false);
         p.hardwareDecoding = root.value("hardwareDecoding").toBool(true);
+        p.audioDevice = ss(root.value("audioDevice").toString());
         p.interactive = interactiveFromJson(root.value("interactive").toObject());
     }
 

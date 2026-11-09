@@ -63,6 +63,7 @@ public:
 
     // 재생 설정
     void setHardwareDecoding(bool enabled);
+    void setAudioDevice(const QString& name);
 
     // 인터랙티브
     void setInteractive(const InteractiveConfig& config);

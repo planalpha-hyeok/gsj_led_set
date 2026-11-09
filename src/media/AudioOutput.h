@@ -36,6 +36,11 @@ private:
     std::shared_ptr<AudioSource> m_source;
 };
 
+struct AudioDeviceInfo {
+    std::string name;
+    bool isDefault = false;
+};
+
 class AudioOutput {
 public:
     static AudioOutput& instance();
@@ -43,6 +48,14 @@ public:
     // 처음 호출 시 소리 장치를 엶. 실패해도 프로그램은 계속 동작 (소리만 없음)
     bool ensureStarted(std::string* error = nullptr);
     bool isStarted() const { return m_started; }
+
+    // 소리 출력 장치 목록
+    std::vector<AudioDeviceInfo> devices(std::string* error = nullptr);
+    // 출력 장치 지정 (빈 문자열 = 기본 장치). 재생 중이면 바로 새 장치로 바꿈
+    // 지정한 장치가 없으면 기본 장치로 출력
+    void setDevice(const std::string& name);
+    std::string requestedDevice() const;
+    std::string currentDeviceName() const;
 
     void add(const std::shared_ptr<AudioTrack>& track);
     void remove(const std::shared_ptr<AudioTrack>& track);
@@ -57,11 +70,21 @@ private:
     AudioOutput() = default;
     ~AudioOutput();
 
+    bool ensureContextLocked();
+    bool openDeviceLocked(std::string* error);
+    void closeDeviceLocked();
+
+    // 섞기(소리 콜백)용: 트랙 목록
     mutable std::mutex m_mutex;
     std::vector<std::shared_ptr<AudioTrack>> m_tracks;
     std::vector<float> m_scratch;
+
+    // 장치 열기/닫기용 (소리 콜백에서는 쓰지 않음)
+    mutable std::mutex m_deviceMutex;
+    void* m_context = nullptr;  // ma_context*
     void* m_device = nullptr;   // ma_device*
-    bool m_started = false;
+    std::string m_deviceName;   // 요청한 장치 (빈 문자열 = 기본)
+    std::atomic<bool> m_started{false};
     bool m_failed = false;
 };
 

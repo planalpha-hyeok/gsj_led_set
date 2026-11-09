@@ -247,6 +247,7 @@ struct Project {
     std::vector<OutputConfig> outputs;
     bool autoStart = false;           // 프로그램 시작 시 출력 켜기 + 재생(또는 스케줄 운영)
     bool hardwareDecoding = true;     // 영상 하드웨어 디코딩 (영역별 설정이 '전체 설정 따름'일 때)
+    std::string audioDevice;          // 소리 출력 장치 이름 (빈 문자열 = 기본 장치)
     InteractiveConfig interactive;
 
     Region* findRegion(const std::string& id);
