@@ -1,7 +1,9 @@
 #include "ui/ProjectController.h"
 
 #include "config/ProjectSerializer.h"
+#include "core/LayerContent.h"
 #include "display/DisplayInfo.h"
+#include "media/MediaInfo.h"
 
 #include <algorithm>
 
@@ -73,6 +75,7 @@ bool ProjectController::load(const QString& path, QString* error)
     if (!loadProjectFile(path, p, error))
         return false;
     m_project = std::move(p);
+    packLoadedLayers();
     m_filePath = path;
     m_selectedRegion = m_project.regions.empty() ? QString() : QString::fromStdString(m_project.regions.back().id);
     m_editingScene = QString::fromStdString(m_project.scenes.front().id);
@@ -81,6 +84,15 @@ bool ProjectController::load(const QString& path, QString* error)
     emit regionSelected(m_selectedRegion);
     emit editingSceneChanged(m_editingScene);
     return true;
+}
+
+void ProjectController::packLoadedLayers()
+{
+    // 이전 버전 파일에서 변환된 플레이리스트 레이어: 실제 파일 길이로 배치
+    for (Scene& scene : m_project.scenes)
+        for (TimelineLayer& layer : scene.timeline.layers)
+            if (layer.needsPacking)
+                packLayer(layer, &resolveClipDuration);
 }
 
 bool ProjectController::save(const QString& path, QString* error)
@@ -115,13 +127,16 @@ void ProjectController::removeRegion(const QString& id)
         return;
     regions.erase(it);
     for (Scene& scene : m_project.scenes) {
-        auto& c = scene.contents;
-        c.erase(std::remove_if(c.begin(), c.end(),
-                               [&](const RegionContent& rc) { return rc.regionId == id.toStdString(); }),
-                c.end());
-        for (TimelineLayer& layer : scene.timeline.layers)
+        auto& layers = scene.timeline.layers;
+        // 빈 레이어는 지우고, 클립이 있는 레이어는 소리 전용으로 남김 (편집 내용 보존)
+        layers.erase(std::remove_if(layers.begin(), layers.end(),
+                                    [&](const TimelineLayer& l) {
+                                        return l.regionId == id.toStdString() && l.clips.empty();
+                                    }),
+                     layers.end());
+        for (TimelineLayer& layer : layers)
             if (layer.regionId == id.toStdString())
-                layer.regionId.clear(); // 영역이 없어진 레이어는 소리만 재생
+                layer.regionId.clear();
     }
     if (m_selectedRegion == id)
         m_selectedRegion = regions.empty() ? QString() : QString::fromStdString(regions.back().id);
@@ -256,21 +271,11 @@ void ProjectController::setEditingScene(const QString& id)
     emit editingSceneChanged(id);
 }
 
-QString ProjectController::addScene(SceneKind kind)
+QString ProjectController::addScene()
 {
     Scene scene;
     scene.id = generateId();
-    scene.kind = kind;
-    scene.name = (kind == SceneKind::Timeline ? "타임라인 " : "장면 ") + std::to_string(m_project.scenes.size() + 1);
-    if (kind == SceneKind::Timeline) {
-        TimelineLayer layer;
-        layer.id = generateId();
-        layer.name = "레이어 1";
-        layer.regionId = m_selectedRegion.toStdString();
-        if (!m_project.findRegion(layer.regionId) && !m_project.regions.empty())
-            layer.regionId = m_project.regions.front().id;
-        scene.timeline.layers.push_back(layer);
-    }
+    scene.name = "장면 " + std::to_string(m_project.scenes.size() + 1);
     m_project.scenes.push_back(scene);
     setDirty(true);
     emit scenesChanged();
@@ -287,9 +292,13 @@ QString ProjectController::duplicateScene(const QString& id)
     Scene copy = *source;
     copy.id = generateId();
     copy.name = source->name + " (복사)";
-    for (RegionContent& c : copy.contents)
-        for (PlaylistItem& item : c.items)
-            item.id = generateId();
+    for (TimelineLayer& layer : copy.timeline.layers) {
+        layer.id = generateId();
+        for (TimelineClip& clip : layer.clips)
+            clip.id = generateId();
+    }
+    for (TimelineCue& cue : copy.timeline.cues)
+        cue.id = generateId();
     m_project.scenes.push_back(copy);
     setDirty(true);
     emit scenesChanged();
@@ -349,27 +358,55 @@ void ProjectController::moveScene(const QString& id, int delta)
 
 // ---------------------------------------------------------------- 콘텐츠
 
-const RegionContent* ProjectController::contentFor(const QString& sceneId, const QString& regionId) const
+RegionContent ProjectController::contentFor(const QString& sceneId, const QString& regionId) const
 {
     const Scene* scene = m_project.findScene(sceneId.toStdString());
-    return scene ? scene->contentFor(regionId.toStdString()) : nullptr;
+    const std::string rid = regionId.toStdString();
+    if (!scene)
+        return layerToContent(nullptr, rid);
+    const int index = playlistLayerIndex(scene->timeline, rid);
+    return layerToContent(index >= 0 ? &scene->timeline.layers[static_cast<std::size_t>(index)] : nullptr, rid);
+}
+
+bool ProjectController::isContentEditable(const QString& sceneId, const QString& regionId) const
+{
+    const Scene* scene = m_project.findScene(sceneId.toStdString());
+    if (!scene)
+        return false;
+    const int index = playlistLayerIndex(scene->timeline, regionId.toStdString());
+    return index < 0 || isPlaylistCompatible(scene->timeline.layers[static_cast<std::size_t>(index)]);
 }
 
 void ProjectController::setContent(const QString& sceneId, const RegionContent& content)
 {
     Scene* scene = m_project.findScene(sceneId.toStdString());
-    if (!scene || !m_project.findRegion(content.regionId))
+    const Region* region = m_project.findRegion(content.regionId);
+    if (!scene || !region)
         return;
-    RegionContent* existing = scene->contentFor(content.regionId);
-    if (existing) {
-        if (*existing == content)
+    if (contentFor(sceneId, QString::fromStdString(content.regionId)) == content)
+        return;
+
+    Timeline& tl = scene->timeline;
+    const int index = playlistLayerIndex(tl, content.regionId);
+    if (index < 0) {
+        if (content.isEmpty() && content.kind == ContentKind::Playlist)
             return;
-        *existing = content;
+        TimelineLayer layer;
+        layer.id = generateId();
+        layer.name = region->name;
+        layer.regionId = region->id;
+        contentToLayer(content, layer, &resolveClipDuration);
+        tl.layers.push_back(std::move(layer));
     } else {
-        scene->contents.push_back(content);
+        TimelineLayer& layer = tl.layers[static_cast<std::size_t>(index)];
+        const TimelineLayer before = layer;
+        contentToLayer(content, layer, &resolveClipDuration);
+        if (layer == before)
+            return;
     }
     setDirty(true);
     emit contentChanged(sceneId, QString::fromStdString(content.regionId));
+    emit timelineChanged(sceneId);
 }
 
 // ---------------------------------------------------------------- 스케줄 / 운영
@@ -415,24 +452,6 @@ void ProjectController::setInteractive(const InteractiveConfig& config)
     emit interactiveChanged();
 }
 
-void ProjectController::setSceneKind(const QString& id, SceneKind kind)
-{
-    Scene* scene = m_project.findScene(id.toStdString());
-    if (!scene || scene->kind == kind)
-        return;
-    scene->kind = kind;
-    if (kind == SceneKind::Timeline && scene->timeline.layers.empty()) {
-        TimelineLayer layer;
-        layer.id = generateId();
-        layer.name = "레이어 1";
-        layer.regionId = m_project.regions.empty() ? std::string() : m_project.regions.front().id;
-        scene->timeline.layers.push_back(layer);
-    }
-    setDirty(true);
-    emit scenesChanged();
-    emit timelineChanged(id);
-}
-
 void ProjectController::setTimeline(const QString& sceneId, const Timeline& timeline)
 {
     Scene* scene = m_project.findScene(sceneId.toStdString());
@@ -441,6 +460,7 @@ void ProjectController::setTimeline(const QString& sceneId, const Timeline& time
     scene->timeline = timeline;
     setDirty(true);
     emit timelineChanged(sceneId);
+    emit contentChanged(sceneId, QString()); // 영역 플레이리스트 화면 갱신
 }
 
 void ProjectController::setAudioDevice(const QString& name)

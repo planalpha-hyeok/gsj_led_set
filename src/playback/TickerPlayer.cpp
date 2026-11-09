@@ -10,19 +10,19 @@ namespace {
 constexpr auto kFileCheckInterval = std::chrono::seconds(1);
 }
 
-TickerPlayer::TickerPlayer(RegionContent content, int regionWidth, int regionHeight)
-    : m_content(std::move(content))
+TickerPlayer::TickerPlayer(TickerConfig config, int regionWidth, int regionHeight)
+    : m_config(std::move(config))
     , m_width(regionWidth)
     , m_height(regionHeight)
     , m_key(nextRenderKey())
 {
-    if ((m_content.ticker.backgroundColor >> 24) != 0)
-        m_background = solidColorFrame(m_content.ticker.backgroundColor);
+    if ((m_config.backgroundColor >> 24) != 0)
+        m_background = solidColorFrame(m_config.backgroundColor);
 }
 
 bool TickerPlayer::rebuild(std::string* error)
 {
-    const TickerConfig& cfg = m_content.ticker;
+    const TickerConfig& cfg = m_config;
     if (!cfg.textFile.empty()) {
         const QFileInfo info(QString::fromStdString(cfg.textFile));
         m_fileModified = info.lastModified();
@@ -60,8 +60,8 @@ void TickerPlayer::publish()
     view->strip = m_strip;
     view->background = m_background;
     view->start = m_start;
-    view->speed = m_content.ticker.speed;
-    view->direction = m_content.ticker.direction;
+    view->speed = m_config.speed;
+    view->direction = m_config.direction;
     view->key = m_key;
     m_view = std::move(view);
 }
@@ -75,7 +75,7 @@ void TickerPlayer::start(PlaybackClock::time_point startTime)
 
 void TickerPlayer::tick(PlaybackClock::time_point now)
 {
-    const std::string& file = m_content.ticker.textFile;
+    const std::string& file = m_config.textFile;
     if (file.empty() || now - m_lastFileCheck < kFileCheckInterval)
         return;
     m_lastFileCheck = now;

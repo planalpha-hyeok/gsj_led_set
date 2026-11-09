@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(gsj_led_player VERSION 0.5.1 LANGUAGES CXX)
+project(gsj_led_player VERSION 0.6.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -36,6 +36,7 @@ add_library(led_core STATIC
     src/core/ControlCommand.cpp
     src/core/OscParser.cpp
     src/core/TimelineEdit.cpp
+    src/core/LayerContent.cpp
     src/core/Log.cpp)
 target_include_directories(led_core PUBLIC "${SRC}")
 
@@ -75,7 +76,7 @@ target_link_libraries(led_render PUBLIC led_media)
 # ---------------------------------------------------------------- playback
 add_library(led_playback STATIC
     src/playback/PlaybackEngine.cpp
-    src/playback/PlaylistPlayer.cpp
+    src/playback/RegionView.cpp
     src/playback/TickerPlayer.cpp
     src/playback/RuntimeOverrides.cpp
     src/playback/TimelinePlayer.cpp)

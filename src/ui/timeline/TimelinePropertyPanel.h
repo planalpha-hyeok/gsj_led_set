@@ -69,6 +69,8 @@ private:
     QCheckBox* m_layerVisible;
     QCheckBox* m_layerSound;
     QCheckBox* m_layerLocked;
+    QCheckBox* m_layerRepeat;
+    QCheckBox* m_layerHold;
     // 큐
     QLineEdit* m_cueName;
     QDoubleSpinBox* m_cueTime;

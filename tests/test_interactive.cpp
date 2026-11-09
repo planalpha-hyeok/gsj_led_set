@@ -186,15 +186,22 @@ static void testOverrides()
     p.regions = {r1, r2};
     Scene s1;
     s1.id = "s1";
-    RegionContent t;
-    t.regionId = "r2";
-    t.kind = ContentKind::Ticker;
+    TimelineLayer layer;
+    layer.id = "L";
+    layer.regionId = "r2";
+    layer.repeat = true;
+    TimelineClip t;
+    t.id = "t";
+    t.kind = ClipKind::Ticker;
     t.ticker.lines = {"원래 문구"};
     t.ticker.textFile = "C:/a.txt";
-    s1.contents.push_back(t);
+    layer.clips = {t};
+    s1.timeline.layers = {layer};
     Scene s2;
     s2.id = "s2";
     p.scenes = {s1, s2};
+    CHECK(hasTickerClip(p, "r2"));
+    CHECK(!hasTickerClip(p, "r1"));
 
     RuntimeOverrides o;
     CHECK(o.empty());
@@ -203,10 +210,10 @@ static void testOverrides()
     const Project q = o.apply(p);
     CHECK(!q.findRegion("r1")->visible);
     CHECK(q.findRegion("r2")->visible);
-    const RegionContent* c1 = q.scenes[0].contentFor("r2");
-    CHECK(c1 && c1->ticker.lines.size() == 1 && c1->ticker.lines[0] == "새 문구" && c1->ticker.textFile.empty());
-    const RegionContent* c2 = q.scenes[1].contentFor("r2"); // 내용이 없던 장면에도 자막 적용
-    CHECK(c2 && c2->kind == ContentKind::Ticker && c2->ticker.lines.size() == 1);
+    const TickerConfig& c1 = q.scenes[0].timeline.layers[0].clips[0].ticker;
+    CHECK(c1.lines.size() == 1 && c1.lines[0] == "새 문구" && c1.textFile.empty());
+    CHECK(q.scenes[1].timeline.layers.empty()); // 자막이 없던 장면은 그대로
+    CHECK(p.scenes[0].timeline.layers[0].clips[0].ticker.lines[0] == "원래 문구");
     CHECK(p.findRegion("r1")->visible); // 원본은 그대로
     o.clear();
     CHECK(o.empty());

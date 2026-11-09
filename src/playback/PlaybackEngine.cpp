@@ -2,8 +2,6 @@
 
 #include "core/Log.h"
 #include "core/TickerMotion.h"
-#include "playback/PlaylistPlayer.h"
-#include "playback/TickerPlayer.h"
 
 #include <algorithm>
 #include <cmath>
@@ -25,34 +23,6 @@ double secondsBetween(PlaybackClock::time_point from, PlaybackClock::time_point 
 
 } // namespace
 
-struct PlaybackEngine::Slot {
-    Region region;
-    RegionContent content;
-    bool hardware = false;   // 실제 적용된 디코딩 방식 (바뀌면 다시 열어야 함)
-    std::unique_ptr<PlaylistPlayer> playlist;
-    std::unique_ptr<TickerPlayer> ticker;
-
-    void start(PlaybackClock::time_point t)
-    {
-        if (playlist)
-            playlist->start(t);
-        if (ticker)
-            ticker->start(t);
-    }
-    void tick(PlaybackClock::time_point t)
-    {
-        if (playlist)
-            playlist->tick(t);
-        if (ticker)
-            ticker->tick(t);
-    }
-    void stop()
-    {
-        if (playlist)
-            playlist->stop();
-    }
-};
-
 PlaybackEngine::PlaybackEngine() = default;
 
 PlaybackEngine::~PlaybackEngine()
@@ -60,78 +30,11 @@ PlaybackEngine::~PlaybackEngine()
     stop();
 }
 
-std::vector<std::unique_ptr<PlaybackEngine::Slot>> PlaybackEngine::buildSlots(
-    const Project& project, const Scene& scene, std::vector<std::unique_ptr<Slot>>* reuse,
-    std::vector<std::string>& errors, std::vector<Slot*>& created)
-{
-    std::vector<std::unique_ptr<Slot>> slotList;
-    const auto now = PlaybackClock::now();
-
-    for (const Region& region : project.regions) {
-        if (!region.visible || region.rect.isEmpty())
-            continue;
-        const RegionContent* content = scene.contentFor(region.id);
-        if (!content || content->isEmpty())
-            continue;
-
-        const bool hardware = effectiveHardwareDecoding(project, region);
-
-        // 내용과 디코딩 방식이 같은 기존 영역은 재생을 이어감 (위치/표시 방식만 갱신)
-        if (reuse) {
-            auto it = std::find_if(reuse->begin(), reuse->end(), [&](const std::unique_ptr<Slot>& s) {
-                return s && s->region.id == region.id && s->content == *content &&
-                       (s->hardware == hardware || content->kind == ContentKind::Ticker);
-            });
-            if (it != reuse->end()) {
-                std::unique_ptr<Slot> slot = std::move(*it);
-                slot->region = region;
-                if (slot->ticker)
-                    slot->ticker->setRegionSize(region.rect.w, region.rect.h, now);
-                slotList.push_back(std::move(slot));
-                continue;
-            }
-        }
-
-        auto slot = std::make_unique<Slot>();
-        slot->region = region;
-        slot->content = *content;
-        slot->hardware = hardware;
-        std::vector<std::string> slotErrors;
-        bool ok;
-        if (content->kind == ContentKind::Ticker) {
-            slot->ticker = std::make_unique<TickerPlayer>(*content, region.rect.w, region.rect.h);
-            ok = slot->ticker->prepare(slotErrors);
-        } else {
-            slot->playlist = std::make_unique<PlaylistPlayer>(*content, hardware);
-            ok = slot->playlist->prepare(slotErrors);
-        }
-        for (const std::string& e : slotErrors)
-            errors.push_back(region.name + ": " + e);
-        if (!ok)
-            continue;
-        created.push_back(slot.get());
-        slotList.push_back(std::move(slot));
-    }
-    return slotList;
-}
-
 void PlaybackEngine::publishLocked()
 {
     auto views = std::make_shared<std::vector<RegionView>>();
-    views->reserve(m_slots.size());
     if (m_timelinePlayer)
         m_timelinePlayer->appendViews(*views);
-    for (const auto& slot : m_slots) {
-        RegionView v;
-        v.rect = slot->region.rect;
-        v.fit = slot->region.fit;
-        v.opacity = static_cast<float>(std::clamp(slot->region.opacity, 0.0, 1.0));
-        if (slot->playlist)
-            slot->playlist->appendClips(v.clips);
-        if (slot->ticker)
-            v.ticker = slot->ticker->view();
-        views->push_back(std::move(v));
-    }
     std::lock_guard<std::mutex> lock(m_viewMutex);
     m_views = std::move(views);
 }
@@ -145,103 +48,49 @@ void PlaybackEngine::play(const Project& project, const std::string& sceneId, st
         return;
     }
 
-    if (scene->kind == SceneKind::Timeline) {
-        auto player = std::make_unique<TimelinePlayer>(project, *scene);
-        player->prepare(errors, kFirstFrameTimeoutMs);
-        player->start();
-        {
-            std::lock_guard<std::mutex> lock(m_slotMutex);
-            m_timelinePlayer = std::move(player);
-            m_sceneId = sceneId;
-            m_playing = true;
-            publishLocked();
-        }
-        startControlThread();
-        logInfo("재생 시작: " + scene->name + " (타임라인)");
-        return;
-    }
-
-    std::vector<Slot*> created;
-    std::vector<std::unique_ptr<Slot>> slotList = buildSlots(project, *scene, nullptr, errors, created);
-
-    // 모든 영역의 첫 프레임 준비 후 같은 시각에 시작 (영역 간 동기화)
-    const auto deadline = PlaybackClock::now() + std::chrono::milliseconds(kFirstFrameTimeoutMs);
-    for (Slot* slot : created) {
-        if (!slot->playlist)
-            continue;
-        const auto remaining =
-            std::chrono::duration_cast<std::chrono::milliseconds>(deadline - PlaybackClock::now()).count();
-        if (!slot->playlist->waitForFirstFrame(static_cast<int>(std::max<long long>(remaining, 0))))
-            logWarning("첫 프레임 준비 시간 초과: " + slot->region.name);
-    }
-    const auto start = PlaybackClock::now();
-    for (auto& slot : slotList)
-        slot->start(start);
-
-    const std::size_t count = slotList.size();
+    auto player = std::make_unique<TimelinePlayer>(project, *scene);
+    player->prepare(errors, kFirstFrameTimeoutMs);
+    player->start();
     {
         std::lock_guard<std::mutex> lock(m_slotMutex);
-        m_slots = std::move(slotList);
+        m_timelinePlayer = std::move(player);
         m_sceneId = sceneId;
         m_playing = true;
         publishLocked();
     }
     startControlThread();
-    logInfo("재생 시작: " + scene->name + " (영역 " + std::to_string(count) + "개)");
+    logInfo("재생 시작: " + scene->name);
 }
 
 void PlaybackEngine::update(const Project& project, std::vector<std::string>& errors)
 {
-    std::vector<std::unique_ptr<Slot>> removed;
+    (void)errors;
     bool sceneMissing = false;
-    bool kindChanged = false;
-    std::string sceneId;
     {
         std::lock_guard<std::mutex> lock(m_slotMutex);
-        if (!m_playing)
+        if (!m_playing || !m_timelinePlayer)
             return;
-        sceneId = m_sceneId;
         const Scene* scene = project.findScene(m_sceneId);
         if (!scene) {
             sceneMissing = true;
-        } else if ((scene->kind == SceneKind::Timeline) != (m_timelinePlayer != nullptr)) {
-            kindChanged = true; // 장면 종류가 바뀜: 처음부터 다시 재생
-        } else if (m_timelinePlayer) {
+        } else {
             m_timelinePlayer->reload(project, *scene);
             publishLocked();
-        } else {
-            std::vector<std::unique_ptr<Slot>> old = std::move(m_slots);
-            std::vector<Slot*> created;
-            m_slots = buildSlots(project, *scene, &old, errors, created);
-            const auto now = PlaybackClock::now();
-            for (Slot* slot : created)
-                slot->start(now);
-            publishLocked();
-            for (auto& s : old)
-                if (s)
-                    removed.push_back(std::move(s));
         }
     }
-    for (auto& s : removed)
-        s->stop();
     if (sceneMissing) {
         logWarning("재생 중인 장면이 삭제되어 재생을 정지합니다");
         stop();
-    } else if (kindChanged) {
-        play(project, sceneId, errors);
     }
 }
 
 void PlaybackEngine::stop()
 {
     stopControlThread();
-    std::vector<std::unique_ptr<Slot>> slotList;
     std::unique_ptr<TimelinePlayer> timeline;
     bool wasPlaying;
     {
         std::lock_guard<std::mutex> lock(m_slotMutex);
-        slotList = std::move(m_slots);
-        m_slots.clear();
         timeline = std::move(m_timelinePlayer);
         wasPlaying = m_playing;
         m_playing = false;
@@ -256,8 +105,6 @@ void PlaybackEngine::stop()
         m_sharedViews.reset();
         m_sharedLayers.clear();
     }
-    for (auto& s : slotList)
-        s->stop();
     if (timeline)
         timeline->stop();
     if (wasPlaying)
@@ -267,13 +114,11 @@ void PlaybackEngine::stop()
 bool PlaybackEngine::skip(const std::string& regionId, int delta)
 {
     std::lock_guard<std::mutex> lock(m_slotMutex);
-    for (auto& slot : m_slots) {
-        if (slot->region.id == regionId && slot->playlist) {
-            slot->playlist->requestSkip(delta);
-            return true;
-        }
-    }
-    return false;
+    if (!m_timelinePlayer || !m_timelinePlayer->skip(regionId, delta))
+        return false;
+    m_timelinePlayer->tick();
+    publishLocked();
+    return true;
 }
 
 bool PlaybackEngine::timelinePause()
@@ -347,9 +192,6 @@ void PlaybackEngine::controlLoop()
     while (!m_controlStop) {
         {
             std::lock_guard<std::mutex> lock(m_slotMutex);
-            const auto now = PlaybackClock::now();
-            for (auto& slot : m_slots)
-                slot->tick(now);
             if (m_timelinePlayer)
                 m_timelinePlayer->tick();
             publishLocked();
@@ -392,26 +234,16 @@ void PlaybackEngine::computeLayers(const std::vector<RegionView>& views, Playbac
             continue;
         const RectF regionRect{double(view.rect.x), double(view.rect.y), double(view.rect.w), double(view.rect.h)};
 
-        // 플레이리스트 (페이드 중에는 이전 항목 위에 새 항목이 겹침)
+        // 클립 (페이드 중에는 이전 클립 위에 새 클립이 겹침). 타임라인 시계 기준 (일시정지 시 같은 프레임 유지)
         for (const ClipView& clip : view.clips) {
-            float alpha = 1.0f;
-            std::shared_ptr<const Frame> frame;
-            if (clip.timeline) {
-                // 타임라인 클립: 타임라인 시계 기준 (일시정지 시 같은 프레임 유지)
-                const double t = clip.timeline->time();
-                alpha = static_cast<float>(timelineClipAlpha(clip, t));
-                if (alpha <= 0.0f)
-                    continue;
-                frame = clip.source->frameAt(std::max(0.0, t - clip.sourceZero));
-            } else {
-                frame = clip.source->frameAt(std::max(0.0, secondsBetween(clip.start, now)));
-                if (clip.fadeSeconds > 0.0)
-                    alpha = static_cast<float>(
-                        std::clamp(secondsBetween(clip.fadeStart, now) / clip.fadeSeconds, 0.0, 1.0));
-            }
-            if (!frame)
+            if (!clip.source || !clip.fade.timeline)
                 continue;
+            const double t = clip.fade.timeline->time();
+            const float alpha = static_cast<float>(clip.fade.alphaAt(t));
             if (alpha <= 0.0f)
+                continue;
+            std::shared_ptr<const Frame> frame = clip.source->frameAt(std::max(0.0, t - clip.sourceZero));
+            if (!frame)
                 continue;
             const Placement p = computePlacement(view.rect, frame->width, frame->height, view.fit);
             if (!p.visible)
@@ -427,13 +259,18 @@ void PlaybackEngine::computeLayers(const std::vector<RegionView>& views, Playbac
 
         // 흐르는 자막
         if (const TickerView* t = view.ticker.get()) {
+            float tickerAlpha = 1.0f;
+            if (view.tickerFade.timeline)
+                tickerAlpha = static_cast<float>(view.tickerFade.alphaAt(view.tickerFade.timeline->time()));
+            if (tickerAlpha <= 0.0f)
+                continue;
             const std::uint64_t keyBase = kTickerKeyFlag | (t->key << 16);
             if (t->background) {
                 SceneLayer bg;
                 bg.key = keyBase;
                 bg.dst = regionRect;
                 bg.uv = RectF{0.0, 0.0, 1.0, 1.0};
-                bg.opacity = view.opacity;
+                bg.opacity = view.opacity * tickerAlpha;
                 bg.frame = t->background;
                 out.push_back(std::move(bg));
             }
@@ -460,7 +297,7 @@ void PlaybackEngine::computeLayers(const std::vector<RegionView>& views, Playbac
                     layer.key = keyBase | static_cast<std::uint64_t>(i + 1);
                     layer.dst = dst;
                     layer.uv = uv;
-                    layer.opacity = view.opacity;
+                    layer.opacity = view.opacity * tickerAlpha;
                     layer.frame = chunk.frame;
                     out.push_back(std::move(layer));
                 }

@@ -1,9 +1,12 @@
-// 재생 엔진 검사: 플레이리스트 전환(컷/페이드), 목록 반복, 자막, 재생 중 편집, 영상 끝 감지
+// 재생 엔진 검사: 플레이리스트(= 영역 반복 레이어) 전환(컷/페이드), 목록 반복, 자막, 재생 중 편집, 영상 끝 감지
+//               타임라인: 레이어, 페이드, 큐, 끝 동작, 소리
 // 사용법: test_playback [영상 파일(선택)]
 
 #include "TestUtil.h"
 
+#include "core/LayerContent.h"
 #include "media/AudioOutput.h"
+#include "media/MediaInfo.h"
 #include "playback/PlaybackEngine.h"
 
 #include <QColor>
@@ -83,6 +86,22 @@ PlaylistItem item(const std::string& path, double duration, TransitionType t = T
     return it;
 }
 
+// 영역 플레이리스트 설정 (편집 화면과 같은 변환: 영역의 첫 레이어)
+void setPlaylist(Project& p, const RegionContent& content)
+{
+    Timeline& tl = p.scenes[0].timeline;
+    const int index = playlistLayerIndex(tl, content.regionId);
+    if (index < 0) {
+        TimelineLayer layer;
+        layer.id = generateId();
+        layer.regionId = content.regionId;
+        contentToLayer(content, layer, &resolveClipDuration);
+        tl.layers.push_back(layer);
+    } else {
+        contentToLayer(content, tl.layers[static_cast<std::size_t>(index)], &resolveClipDuration);
+    }
+}
+
 bool singleColor(const std::vector<SceneLayer>& l, char c)
 {
     return l.size() == 1 && l[0].frame && frameColor(*l[0].frame) == c && l[0].opacity > 0.99f;
@@ -96,7 +115,7 @@ static void testCutLoop(const std::string& red, const std::string& blue)
     RegionContent c;
     c.regionId = "r";
     c.items = {item(red, 0.3), item(blue, 0.3)};
-    p.scenes[0].contents.push_back(c);
+    setPlaylist(p, c);
 
     PlaybackEngine engine;
     std::vector<std::string> errors;
@@ -121,7 +140,7 @@ static void testFade(const std::string& red, const std::string& blue)
     RegionContent c;
     c.regionId = "r";
     c.items = {item(red, 1.0, TransitionType::Cut), item(blue, 1.0, TransitionType::Fade, 0.4)};
-    p.scenes[0].contents.push_back(c);
+    setPlaylist(p, c);
 
     PlaybackEngine engine;
     std::vector<std::string> errors;
@@ -144,7 +163,7 @@ static void testNoLoopHoldsLast(const std::string& red, const std::string& blue)
     c.regionId = "r";
     c.loopPlaylist = false;
     c.items = {item(red, 0.2), item(blue, 0.2)};
-    p.scenes[0].contents.push_back(c);
+    setPlaylist(p, c);
 
     PlaybackEngine engine;
     std::vector<std::string> errors;
@@ -161,15 +180,18 @@ static void testMissingFileSkipped(const std::string& red, const std::string& bl
     RegionContent c;
     c.regionId = "r";
     c.items = {item("__없는파일__.png", 0.2), item(red, 0.2), item(blue, 0.2)};
-    p.scenes[0].contents.push_back(c);
+    setPlaylist(p, c);
 
     PlaybackEngine engine;
     std::vector<std::string> errors;
     engine.play(p, "s", errors);
     CHECK(errors.size() == 1);   // 첫 항목 실패 보고
-    CHECK(waitFor(engine, 200, [](const auto& l) { return singleColor(l, 'R'); }));
+    // 실패 항목 구간은 빈 화면, 나머지는 정상 재생 + 반복
+    CHECK(waitFor(engine, 200, [](const auto& l) { return l.empty(); }));
+    CHECK(waitFor(engine, 600, [](const auto& l) { return singleColor(l, 'R'); }));
     CHECK(waitFor(engine, 1000, [](const auto& l) { return singleColor(l, 'B'); }));
-    CHECK(waitFor(engine, 1500, [](const auto& l) { return singleColor(l, 'R'); })); // 실패 항목 건너뜀
+    CHECK(waitFor(engine, 1000, [](const auto& l) { return l.empty(); }));
+    CHECK(waitFor(engine, 1000, [](const auto& l) { return singleColor(l, 'R'); }));
     engine.stop();
 }
 
@@ -179,7 +201,7 @@ static void testLiveUpdate(const std::string& red, const std::string& blue)
     RegionContent c;
     c.regionId = "r";
     c.items = {item(red, 0.0)};
-    p.scenes[0].contents.push_back(c);
+    setPlaylist(p, c);
 
     PlaybackEngine engine;
     std::vector<std::string> errors;
@@ -202,7 +224,8 @@ static void testLiveUpdate(const std::string& red, const std::string& blue)
         CHECK(before[0].key == after[0].key);
 
     // 콘텐츠를 바꾸면 새 소스로 교체
-    p.scenes[0].contents[0].items = {item(blue, 0.0)};
+    c.items = {item(blue, 0.0)};
+    setPlaylist(p, c);
     engine.update(p, errors);
     CHECK(waitFor(engine, 500, [](const auto& l) { return singleColor(l, 'B'); }));
 
@@ -229,7 +252,7 @@ static void testTicker()
     c.ticker.shadow = true;
     c.ticker.speed = 2000;
     c.ticker.backgroundColor = 0x80000000u;
-    p.scenes[0].contents.push_back(c);
+    setPlaylist(p, c);
 
     PlaybackEngine engine;
     std::vector<std::string> errors;
@@ -247,7 +270,8 @@ static void testTicker()
     }));
 
     // 세로 방향
-    p.scenes[0].contents[0].ticker.direction = TickerDirection::Up;
+    c.ticker.direction = TickerDirection::Up;
+    setPlaylist(p, c);
     engine.update(p, errors);
     CHECK(waitFor(engine, 1500, [](const auto& l) { return l.size() >= 2; }));
     engine.stop();
@@ -260,7 +284,7 @@ static void testSharedFrame(const std::string& red)
     RegionContent c;
     c.regionId = "r";
     c.items = {item(red, 0.0)};
-    p.scenes[0].contents.push_back(c);
+    setPlaylist(p, c);
     PlaybackEngine engine;
     std::vector<std::string> errors;
     engine.play(p, "s", errors);
@@ -284,7 +308,7 @@ static void testSkip(const std::string& red, const std::string& blue)
     RegionContent c;
     c.regionId = "r";
     c.items = {item(red, 100.0), item(blue, 100.0)};
-    p.scenes[0].contents.push_back(c);
+    setPlaylist(p, c);
     PlaybackEngine engine;
     std::vector<std::string> errors;
     engine.play(p, "s", errors);
@@ -311,7 +335,7 @@ static void testLivePlaylist()
     live.type = ItemType::Live;
     live.source = "lavfi:testsrc2=size=96x48:rate=30";
     c.items = {live};
-    p.scenes[0].contents.push_back(c);
+    setPlaylist(p, c);
     PlaybackEngine engine;
     std::vector<std::string> errors;
     engine.play(p, "s", errors);
@@ -333,7 +357,6 @@ static TimelineClip tclip(const std::string& id, const std::string& path, double
 static Project timelineProject(Timeline tl)
 {
     Project p = baseProject();
-    p.scenes[0].kind = SceneKind::Timeline;
     p.scenes[0].timeline = std::move(tl);
     return p;
 }
@@ -466,6 +489,107 @@ static void testTimelineEditAndHidden(const std::string& red, const std::string&
     engine.stop();
 }
 
+static void testRepeatAndHoldLayers(const std::string& red, const std::string& blue)
+{
+    // 영역 r: 반복 레이어 (빨강 0.3 + 파랑 0.3 = 한 바퀴 0.6초)
+    // 영역 r2: 일반 레이어 빨강 0~1.5초 / 영역 r3: 마지막 화면 유지 레이어 파랑 0~0.2초
+    Project p = baseProject();
+    Region r2 = p.regions[0];
+    r2.id = "r2";
+    r2.rect = RectI{400, 0, 400, 100};
+    Region r3 = p.regions[0];
+    r3.id = "r3";
+    r3.rect = RectI{0, 100, 400, 100};
+    p.regions.push_back(r2);
+    p.regions.push_back(r3);
+    TimelineLayer rep = tlayer("R", {tclip("a", red, 0.0, 0.3), tclip("b", blue, 0.3, 0.3)});
+    rep.repeat = true;
+    TimelineLayer normal = tlayer("N", {tclip("n", red, 0.0, 1.5)});
+    normal.regionId = "r2";
+    TimelineLayer hold = tlayer("H", {tclip("h", blue, 0.0, 0.2)});
+    hold.regionId = "r3";
+    hold.holdLast = true;
+    p.scenes[0].timeline.layers = {rep, normal, hold};
+    p.scenes[0].timeline.endAction = TimelineEnd::Stop;
+    CHECK(test::near(p.scenes[0].timeline.length(), 1.5)); // 반복/유지 레이어는 길이에 포함 안 함
+
+    PlaybackEngine engine;
+    std::vector<std::string> errors;
+    engine.play(p, "s", errors);
+    CHECK(errors.empty());
+    auto regionColor = [](const std::vector<SceneLayer>& l, double x, double y, char c) {
+        for (const SceneLayer& s : l)
+            if (s.frame && test::near(s.dst.x, x) && test::near(s.dst.y, y) && frameColor(*s.frame) == c &&
+                s.opacity > 0.99f)
+                return true;
+        return false;
+    };
+    // 두 번째 바퀴: 0.6~0.9초에 다시 빨강, 그동안 r3은 마지막 화면(파랑) 유지
+    CHECK(waitFor(engine, 1500, [&](const auto& l) {
+        const double t = engine.timelineStatus().time;
+        return t > 0.62 && t < 0.88 && regionColor(l, 0, 0, 'R') && regionColor(l, 0, 100, 'B') &&
+               regionColor(l, 400, 0, 'R');
+    }));
+    CHECK(waitFor(engine, 1500, [&](const auto& l) {
+        const double t = engine.timelineStatus().time;
+        return t > 0.92 && t < 1.18 && regionColor(l, 0, 0, 'B');
+    }));
+    // 1.5초에 장면 끝 (정지)
+    CHECK(waitFor(engine, 2000, [&](const auto& l) { return l.empty() && engine.timelineStatus().finished; }));
+    engine.stop();
+}
+
+static void testRegionOrderAndSkip(const std::string& red, const std::string& blue)
+{
+    // 같은 위치의 두 영역: 목록 뒤쪽 영역(front)이 앞에 그려짐 (레이어 순서와 무관)
+    Project p = baseProject();
+    Region front = p.regions[0];
+    front.id = "front";
+    p.regions.push_back(front);
+    TimelineLayer backLayer = tlayer("B", {tclip("r", red, 0.0, 10.0)});
+    TimelineLayer frontLayer = tlayer("F", {tclip("b", blue, 0.0, 10.0)});
+    frontLayer.regionId = "front";
+    frontLayer.clips[0].opacity = 0.5;
+    p.scenes[0].timeline.layers = {backLayer, frontLayer};
+    PlaybackEngine engine;
+    std::vector<std::string> errors;
+    engine.play(p, "s", errors);
+    CHECK(waitFor(engine, 500, [](const auto& l) {
+        return l.size() == 2 && frameColor(*l[0].frame) == 'R' && frameColor(*l[1].frame) == 'B' &&
+               l[1].opacity > 0.45f && l[1].opacity < 0.55f;
+    }));
+    // 일반(반복 아님) 레이어에서도 다음/이전 이동: 마지막 클립에서 다음은 그대로
+    CHECK(engine.skip("r", +1));
+    CHECK(engine.skip("r", -1));
+    CHECK(waitFor(engine, 500, [](const auto& l) { return l.size() == 2; }));
+    engine.stop();
+}
+
+static void testTickerClipFade()
+{
+    // 타임라인 자막 클립: 페이드 인 동안 반투명
+    Project p = baseProject();
+    TimelineClip t;
+    t.id = "t";
+    t.kind = ClipKind::Ticker;
+    t.ticker.lines = {"페이드 자막"};
+    t.ticker.fontSize = 40;
+    t.ticker.speed = 500;
+    t.start = 0.0;
+    t.duration = 3.0;
+    t.fadeIn = 1.0;
+    p.scenes[0].timeline.layers = {tlayer("T", {t})};
+    PlaybackEngine engine;
+    std::vector<std::string> errors;
+    engine.play(p, "s", errors);
+    CHECK(errors.empty());
+    CHECK(waitFor(engine, 1000, [](const auto& l) {
+        return !l.empty() && l[0].opacity > 0.1f && l[0].opacity < 0.9f;
+    }));
+    CHECK(waitFor(engine, 2000, [](const auto& l) { return !l.empty() && l[0].opacity > 0.99f; }));
+    engine.stop();
+}
+
 static void testTimelineVideoAudio(const std::string& video, const std::string& audio)
 {
     // 영상 클립(자르기 0.5초) + 소리 클립 0.2~0.8초
@@ -498,7 +622,7 @@ static void testVideoEnd(const std::string& video, const std::string& blue)
     RegionContent c;
     c.regionId = "r";
     c.items = {item(video, 0.0), item(blue, 0.0)};
-    p.scenes[0].contents.push_back(c);
+    setPlaylist(p, c);
 
     PlaybackEngine engine;
     std::vector<std::string> errors;
@@ -534,6 +658,9 @@ int main(int argc, char* argv[])
     testTimelineLayersFadeCue(red, blue);
     testTimelineEndActions(red);
     testTimelineEditAndHidden(red, blue);
+    testRepeatAndHoldLayers(red, blue);
+    testRegionOrderAndSkip(red, blue);
+    testTickerClipFade();
     if (argc > 2)
         testTimelineVideoAudio(argv[1], argv[2]);
     if (argc > 1)

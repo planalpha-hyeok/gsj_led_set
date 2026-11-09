@@ -153,13 +153,15 @@ QString MainWindow::executeCommand(const QString& line, const QString& source)
         if (!region)
             return fail("영역을 찾을 수 없음: " + cmd.target);
         if (!m_engine->skip(region->id, cmd.type == CommandType::Next ? +1 : -1))
-            return fail("재생 중인 플레이리스트 영역이 아님: " + cmd.target);
+            return fail("재생 중이 아니거나 이 영역에 레이어가 없음: " + cmd.target);
         return {};
     }
     case CommandType::Text: {
         const Region* region = findByNameOrNumber(project.regions, cmd.target);
         if (!region)
             return fail("영역을 찾을 수 없음: " + cmd.target);
+        if (!hasTickerClip(project, region->id))
+            return fail("이 영역에 자막 클립이 없음: " + cmd.target);
         m_overrides.setTickerLines(region->id, cmd.lines);
         refreshPlaybackFromOverrides();
         return {};
@@ -188,15 +190,15 @@ QString MainWindow::executeCommand(const QString& line, const QString& source)
     }
     case CommandType::Pause:
         if (!m_engine->timelinePause())
-            return fail("타임라인 장면이 재생 중이 아님");
+            return fail("재생 중인 장면이 없음");
         return {};
     case CommandType::Go:
         if (!m_engine->timelineResume())
-            return fail("타임라인 장면이 재생 중이 아님");
+            return fail("재생 중인 장면이 없음");
         return {};
     case CommandType::Seek:
         if (!m_engine->timelineSeek(cmd.seconds))
-            return fail("타임라인 장면이 재생 중이 아님");
+            return fail("재생 중인 장면이 없음");
         return {};
     case CommandType::Reset:
         m_overrides.clear();
@@ -262,14 +264,6 @@ void MainWindow::setupTimeline()
     });
     connect(m_timelineEditor, &TimelineEditor::seekRequested, this, [this](double t) { m_engine->timelineSeek(t); });
     connect(m_timelineEditor, &TimelineEditor::goRequested, this, [this] { m_engine->timelineResume(); });
-
-    // 편집 장면이 타임라인이면 타임라인 창을 앞으로
-    auto raiseIfTimeline = [this] {
-        if (!m_timelineEditor->sceneId().isEmpty())
-            m_timelineDock->raise();
-    };
-    connect(m_controller, &ProjectController::editingSceneChanged, this, raiseIfTimeline);
-    connect(m_controller, &ProjectController::scenesChanged, this, raiseIfTimeline);
 
     // 재생 위치 표시 (초당 20번)
     m_timelineStatusTimer.setInterval(50);

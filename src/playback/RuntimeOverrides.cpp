@@ -13,22 +13,31 @@ Project RuntimeOverrides::apply(const Project& project) const
     for (const auto& [regionId, lines] : m_tickerLines) {
         if (!p.findRegion(regionId))
             continue;
-        // 모든 장면에서 이 영역의 자막을 바꿈 (자막 영역이 아니던 곳은 자막으로 바뀜)
-        for (Scene& scene : p.scenes) {
-            RegionContent* c = scene.contentFor(regionId);
-            if (!c) {
-                RegionContent nc;
-                nc.regionId = regionId;
-                nc.kind = ContentKind::Ticker;
-                scene.contents.push_back(nc);
-                c = &scene.contents.back();
+        // 모든 장면에서 이 영역 레이어의 자막 클립 문구를 바꿈
+        for (Scene& scene : p.scenes)
+            for (TimelineLayer& layer : scene.timeline.layers) {
+                if (layer.regionId != regionId)
+                    continue;
+                for (TimelineClip& clip : layer.clips) {
+                    if (clip.kind != ClipKind::Ticker)
+                        continue;
+                    clip.ticker.lines = lines;
+                    clip.ticker.textFile.clear(); // 외부 명령 문구가 파일보다 우선
+                }
             }
-            c->kind = ContentKind::Ticker;
-            c->ticker.lines = lines;
-            c->ticker.textFile.clear(); // 외부 명령 문구가 파일보다 우선
-        }
     }
     return p;
+}
+
+bool hasTickerClip(const Project& project, const std::string& regionId)
+{
+    for (const Scene& scene : project.scenes)
+        for (const TimelineLayer& layer : scene.timeline.layers)
+            if (layer.regionId == regionId)
+                for (const TimelineClip& clip : layer.clips)
+                    if (clip.kind == ClipKind::Ticker)
+                        return true;
+    return false;
 }
 
 } // namespace led

@@ -2,7 +2,7 @@
 
 // 외부 명령으로 바꾼 재생 상태 (저장되지 않음)
 //  - 영역 표시/숨김
-//  - 자막 문구
+//  - 자막 문구 (그 영역 레이어의 자막 클립에 적용)
 // 재생 엔진에는 apply()로 만든 사본 프로젝트를 넘김
 
 #include "core/Project.h"
@@ -34,5 +34,8 @@ private:
     std::map<std::string, bool> m_visible;
     std::map<std::string, std::vector<std::string>> m_tickerLines;
 };
+
+// 어느 장면이든 이 영역 레이어에 자막 클립이 있는지 (자막 명령 대상 확인용)
+bool hasTickerClip(const Project& project, const std::string& regionId);
 
 } // namespace led

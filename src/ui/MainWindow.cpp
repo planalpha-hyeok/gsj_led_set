@@ -73,7 +73,6 @@ MainWindow::MainWindow(QWidget* parent)
     connect(&m_outputRestartTimer, &QTimer::timeout, this, &MainWindow::restartOutputs);
 
     connect(m_controller, &ProjectController::regionsChanged, this, &MainWindow::onRegionsChanged);
-    connect(m_controller, &ProjectController::contentChanged, this, &MainWindow::onPlaybackContentChanged);
     connect(m_controller, &ProjectController::scenesChanged, this, &MainWindow::onPlaybackContentChanged);
     connect(m_controller, &ProjectController::playbackSettingsChanged, this, &MainWindow::onPlaybackContentChanged);
     connect(m_controller, &ProjectController::timelineChanged, this, &MainWindow::onPlaybackContentChanged);
@@ -151,8 +150,8 @@ void MainWindow::createDocks()
                                 QDockWidget::DockWidgetClosable);
     addDockWidget(Qt::BottomDockWidgetArea, m_timelineDock);
     tabifyDockWidget(logDock, m_timelineDock);
-    logDock->raise();
-    resizeDocks({logDock}, {230}, Qt::Vertical);
+    m_timelineDock->raise(); // 모든 장면이 타임라인이므로 기본으로 타임라인 표시
+    resizeDocks({logDock}, {260}, Qt::Vertical);
 }
 
 void MainWindow::createActions()

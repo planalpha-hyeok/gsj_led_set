@@ -85,16 +85,43 @@ struct TickerConfig {
     bool operator!=(const TickerConfig& o) const { return !(*this == o); }
 };
 
+// ---------------------------------------------------------------- 플레이리스트 화면용 (타임라인 레이어를 간단히 보여주는 형태)
+
+enum class ContentKind { Playlist, Ticker };
+
+struct RegionContent {
+    std::string regionId;
+    ContentKind kind = ContentKind::Playlist;
+    std::vector<PlaylistItem> items;
+    bool loopPlaylist = true;           // 마지막 항목 후 처음부터 반복 (= 레이어 반복)
+    TickerConfig ticker;
+
+    bool isEmpty() const;
+    bool operator==(const RegionContent& o) const;
+    bool operator!=(const RegionContent& o) const { return !(*this == o); }
+};
+
 // ---------------------------------------------------------------- 타임라인
 
-// 시간축 위의 클립 1개 (영상/이미지/소리 파일)
+enum class ClipKind {
+    File,    // 영상/이미지/소리 파일
+    Live,    // 캡처보드/웹캠
+    Ticker   // 흐르는 자막
+};
+
+// 시간축 위의 클립 1개
 struct TimelineClip {
     std::string id;
-    std::string source;          // 파일 경로
+    ClipKind kind = ClipKind::File;
+    std::string source;          // 파일 경로 / 라이브 장치 이름
+    std::string liveSize;        // 라이브: 입력 해상도 (비어 있으면 자동)
+    double liveFps = 0.0;        // 라이브: 입력 프레임 (0 = 자동)
+    TickerConfig ticker;         // 자막
     double start = 0.0;          // 타임라인 시작 시각(초)
     double duration = 5.0;       // 타임라인에서 차지하는 길이(초)
+    bool autoDuration = false;   // 길이 = 파일 길이 (플레이리스트 '자동')
     double inPoint = 0.0;        // 자르기: 파일의 몇 초부터 사용
-    double fadeIn = 0.0;         // 초
+    double fadeIn = 0.0;         // 초 (플레이리스트에서는 앞 항목과 겹치는 페이드 전환)
     double fadeOut = 0.0;        // 초
     double opacity = 1.0;        // 0 ~ 1
     double volume = 1.0;         // 0 ~ 1 (소리)
@@ -108,12 +135,17 @@ struct TimelineClip {
 struct TimelineLayer {
     std::string id;
     std::string name;
-    std::string regionId;        // 표시할 영역 (소리만 있는 레이어는 비워도 됨)
+    std::string regionId;        // 표시할 영역 (비어 있으면 소리만)
     bool visible = true;         // 끄면 화면에 표시 안 함
     bool muted = false;          // 소리 끔
     bool locked = false;         // 편집 잠금
+    bool repeat = false;         // 이 레이어만 자기 길이로 계속 반복 (플레이리스트 반복)
+    bool holdLast = false;       // 반복하지 않을 때 마지막 클립 화면을 계속 유지 (장면 길이에 포함 안 함)
     std::vector<TimelineClip> clips;
 
+    bool needsPacking = false;   // 불러오기 직후 플레이리스트 순서대로 다시 배치 필요 (저장 안 함)
+
+    double contentEnd() const;   // 마지막 클립이 끝나는 시각
     bool operator==(const TimelineLayer& o) const;
     bool operator!=(const TimelineLayer& o) const { return !(*this == o); }
 };
@@ -134,45 +166,25 @@ enum class TimelineEnd {
 };
 
 struct Timeline {
-    std::vector<TimelineLayer> layers;   // 0번이 맨 위(화면 앞)
+    std::vector<TimelineLayer> layers;   // 같은 영역 안에서는 앞쪽 레이어가 화면 앞
     std::vector<TimelineCue> cues;
     TimelineEnd endAction = TimelineEnd::Hold;
 
-    double length() const;               // 마지막 클립이 끝나는 시각
+    // 반복/마지막 유지가 아닌 레이어 중 가장 늦게 끝나는 시각 (0 = 끝없이 재생)
+    double length() const;
+    // 모든 클립 중 가장 늦게 끝나는 시각 (화면 표시용)
+    double contentEnd() const;
     bool operator==(const Timeline& o) const;
     bool operator!=(const Timeline& o) const { return !(*this == o); }
 };
 
 // ---------------------------------------------------------------- 장면
 
-enum class SceneKind {
-    Regions,   // 영역별 플레이리스트/자막
-    Timeline   // 큐 타임라인
-};
-
-enum class ContentKind { Playlist, Ticker };
-
-struct RegionContent {
-    std::string regionId;
-    ContentKind kind = ContentKind::Playlist;
-    std::vector<PlaylistItem> items;
-    bool loopPlaylist = true;           // 마지막 항목 후 처음부터 반복 (끄면 마지막 화면 유지)
-    TickerConfig ticker;
-
-    bool isEmpty() const;
-    bool operator==(const RegionContent& o) const;
-    bool operator!=(const RegionContent& o) const { return !(*this == o); }
-};
-
+// 장면 = 타임라인 1개. 영역별 플레이리스트/자막은 그 영역의 반복 레이어로 표현
 struct Scene {
     std::string id;
     std::string name;
-    SceneKind kind = SceneKind::Regions;
-    std::vector<RegionContent> contents;   // kind == Regions
-    Timeline timeline;                     // kind == Timeline
-
-    RegionContent* contentFor(const std::string& regionId);
-    const RegionContent* contentFor(const std::string& regionId) const;
+    Timeline timeline;
 };
 
 // ---------------------------------------------------------------- 스케줄
@@ -270,6 +282,8 @@ const char* decodeModeKey(DecodeMode m);
 bool decodeModeFromKey(const std::string& key, DecodeMode& out);
 // 영역에 실제로 적용할 디코딩 방식 (true = 하드웨어)
 bool effectiveHardwareDecoding(const Project& project, const Region& region);
+const char* clipKindKey(ClipKind k);
+bool clipKindFromKey(const std::string& key, ClipKind& out);
 const char* tickerDirectionKey(TickerDirection d);
 bool tickerDirectionFromKey(const std::string& key, TickerDirection& out);
 

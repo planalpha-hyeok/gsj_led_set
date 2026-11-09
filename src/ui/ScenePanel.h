@@ -4,7 +4,6 @@
 
 #include <QWidget>
 
-class QComboBox;
 class QLineEdit;
 class QListWidget;
 class QPushButton;
@@ -36,8 +35,6 @@ private:
     QListWidget* m_list;
     QLineEdit* m_name;
     QPushButton* m_addButton;
-    QPushButton* m_addTimelineButton;
-    QComboBox* m_kind;
     QPushButton* m_duplicateButton;
     QPushButton* m_removeButton;
     QPushButton* m_upButton;

@@ -3,7 +3,6 @@
 #include "core/Project.h"
 #include "ui/ProjectController.h"
 
-#include <QComboBox>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -24,7 +23,7 @@ ScenePanel::ScenePanel(ProjectController* controller, QWidget* parent)
     layout->setContentsMargins(8, 8, 8, 8);
     layout->setSpacing(8);
 
-    auto* label = new QLabel(QStringLiteral("장면 목록 (선택한 장면의 콘텐츠를 '영역' 탭에서 편집)"), this);
+    auto* label = new QLabel(QStringLiteral("장면 목록 (선택한 장면을 '타임라인' 창과 '영역' 탭에서 편집)"), this);
     label->setObjectName("sectionLabel");
     label->setWordWrap(true);
     layout->addWidget(label);
@@ -34,29 +33,25 @@ ScenePanel::ScenePanel(ProjectController* controller, QWidget* parent)
 
     auto* buttons = new QHBoxLayout;
     m_addButton = new QPushButton(QStringLiteral("추가"), this);
-    m_addTimelineButton = new QPushButton(QStringLiteral("타임라인 추가"), this);
-    m_addTimelineButton->setToolTip(QStringLiteral("시간축에 영상/이미지/소리를 배치하는 큐 타임라인 장면"));
     m_duplicateButton = new QPushButton(QStringLiteral("복제"), this);
     m_removeButton = new QPushButton(QStringLiteral("삭제"), this);
     m_upButton = new QPushButton(QStringLiteral("위로"), this);
     m_downButton = new QPushButton(QStringLiteral("아래로"), this);
-    for (QPushButton* b : {m_addButton, m_addTimelineButton, m_duplicateButton, m_removeButton, m_upButton, m_downButton})
+    for (QPushButton* b : {m_addButton, m_duplicateButton, m_removeButton, m_upButton, m_downButton})
         buttons->addWidget(b);
     layout->addLayout(buttons);
 
     auto* form = new QFormLayout;
     m_name = new QLineEdit(this);
     form->addRow(QStringLiteral("이름"), m_name);
-    m_kind = new QComboBox(this);
-    m_kind->addItem(QStringLiteral("영역별 (플레이리스트/자막)"), int(SceneKind::Regions));
-    m_kind->addItem(QStringLiteral("타임라인"), int(SceneKind::Timeline));
-    form->addRow(QStringLiteral("종류"), m_kind);
     layout->addLayout(form);
 
     m_playButton = new QPushButton(QStringLiteral("▶ 이 장면 재생"), this);
     layout->addWidget(m_playButton);
 
     auto* hint = new QLabel(QStringLiteral("영역의 위치는 모든 장면이 같고, 영역에 넣는 콘텐츠만 장면마다 다릅니다.\n"
+                                           "장면 = 타임라인 1개. '영역' 탭의 플레이리스트/자막은 타임라인에서 그 영역의 "
+                                           "첫 번째 레이어를 간단히 보여주는 화면입니다.\n"
                                            "장면은 '스케줄' 탭에서 시간대별로 자동 전환할 수 있습니다."),
                             this);
     hint->setObjectName("hintLabel");
@@ -69,11 +64,6 @@ ScenePanel::ScenePanel(ProjectController* controller, QWidget* parent)
             m_controller->setEditingScene(id);
     });
     connect(m_addButton, &QPushButton::clicked, this, [this] { m_controller->addScene(); });
-    connect(m_addTimelineButton, &QPushButton::clicked, this,
-            [this] { m_controller->addScene(SceneKind::Timeline); });
-    connect(m_kind, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this] {
-        m_controller->setSceneKind(m_controller->editingSceneId(), static_cast<SceneKind>(m_kind->currentData().toInt()));
-    });
     connect(m_duplicateButton, &QPushButton::clicked, this,
             [this] { m_controller->duplicateScene(m_controller->editingSceneId()); });
     connect(m_removeButton, &QPushButton::clicked, this, [this] {
@@ -130,8 +120,6 @@ void ScenePanel::refresh()
             ++index;
             const QString id = QString::fromStdString(s.id);
             QString text = QStringLiteral("%1. %2").arg(index).arg(QString::fromStdString(s.name));
-            if (s.kind == SceneKind::Timeline)
-                text += QStringLiteral("   [타임라인]");
             if (id == m_playingScene)
                 text += QStringLiteral("   ▶ 재생 중");
             auto* item = new QListWidgetItem(text, m_list);
@@ -149,10 +137,6 @@ void ScenePanel::refresh()
     }
     const Scene* scene = m_controller->editingScene();
     m_name->setText(scene ? QString::fromStdString(scene->name) : QString());
-    {
-        const QSignalBlocker blocker(m_kind);
-        m_kind->setCurrentIndex(scene && scene->kind == SceneKind::Timeline ? 1 : 0);
-    }
     m_removeButton->setEnabled(project.scenes.size() > 1);
 }
 

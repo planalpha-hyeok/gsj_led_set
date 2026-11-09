@@ -27,13 +27,28 @@ namespace {
 
 constexpr int kCoordLimit = 1000000;
 
-QString contentSummary(const RegionContent* c)
+// 편집 중인 장면에서 이 영역 레이어들의 요약
+QString contentSummary(const Scene* scene, const std::string& regionId, bool& empty)
 {
-    if (!c || c->isEmpty())
+    int layers = 0;
+    int clips = 0;
+    bool ticker = false;
+    if (scene)
+        for (const TimelineLayer& l : scene->timeline.layers)
+            if (l.regionId == regionId) {
+                ++layers;
+                clips += static_cast<int>(l.clips.size());
+                for (const TimelineClip& c : l.clips)
+                    ticker = ticker || c.kind == ClipKind::Ticker;
+            }
+    empty = clips == 0;
+    if (clips == 0)
         return QStringLiteral("콘텐츠 없음");
-    if (c->kind == ContentKind::Ticker)
-        return QStringLiteral("자막");
-    return QStringLiteral("항목 %1개").arg(static_cast<int>(c->items.size()));
+    QString text = layers > 1 ? QStringLiteral("레이어 %1개 · 클립 %2개").arg(layers).arg(clips)
+                              : QStringLiteral("클립 %1개").arg(clips);
+    if (ticker)
+        text += QStringLiteral(" (자막 포함)");
+    return text;
 }
 
 } // namespace
@@ -172,19 +187,20 @@ void RegionPanel::refreshList()
         // 배열의 마지막(맨 앞) 영역을 목록 맨 위에 표시
         for (auto it = project.regions.rbegin(); it != project.regions.rend(); ++it) {
             const QString id = QString::fromStdString(it->id);
-            const RegionContent* content = m_controller->contentFor(sceneId, id);
+            bool empty = true;
+            const QString summary = contentSummary(project.findScene(sceneId.toStdString()), it->id, empty);
             QString text = QStringLiteral("%1   (%2, %3  %4×%5)  · %6")
                                .arg(QString::fromStdString(it->name))
                                .arg(it->rect.x)
                                .arg(it->rect.y)
                                .arg(it->rect.w)
                                .arg(it->rect.h)
-                               .arg(contentSummary(content));
+                               .arg(summary);
             if (!it->visible)
                 text += QStringLiteral("  [숨김]");
             auto* item = new QListWidgetItem(text, m_list);
             item->setData(Qt::UserRole, id);
-            if (!content || content->isEmpty())
+            if (empty)
                 item->setForeground(QColor(140, 140, 140));
             if (id == selected) {
                 m_list->setCurrentItem(item);

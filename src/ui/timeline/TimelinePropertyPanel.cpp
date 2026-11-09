@@ -1,5 +1,7 @@
 #include "ui/timeline/TimelinePropertyPanel.h"
 
+#include "core/LayerContent.h"
+
 #include "core/ControlCommand.h"
 #include "core/TimelineEdit.h"
 #include "media/MediaInfo.h"
@@ -68,7 +70,9 @@ TimelinePropertyPanel::TimelinePropertyPanel(QWidget* parent)
                                            "• Ctrl+휠: 확대/축소, Shift+휠: 가로 이동\n"
                                            "• Delete: 삭제, Space: 재생/일시정지\n"
                                            "• 파일을 끌어다 놓으면 그 위치에 추가\n"
-                                           "• Alt를 누르고 끌면 자석 일시 해제"),
+                                           "• Alt를 누르고 끌면 자석 일시 해제\n"
+                                           "• 영역 그룹 머리 클릭: 접기/펴기, '+': 레이어 추가\n"
+                                           "• 레이어 '반복': 그 레이어만 자기 길이로 계속 반복"),
                             m_stack);
     help->setObjectName("hintLabel");
     help->setWordWrap(true);
@@ -136,7 +140,14 @@ TimelinePropertyPanel::TimelinePropertyPanel(QWidget* parent)
     lf->addRow(QString(), m_layerVisible);
     lf->addRow(QString(), m_layerSound);
     lf->addRow(QString(), m_layerLocked);
-    auto* layerHint = new QLabel(QStringLiteral("위쪽 레이어가 화면 앞에 그려집니다.\n같은 영역에 여러 레이어를 겹칠 수 있습니다."),
+    m_layerRepeat = new QCheckBox(QStringLiteral("반복 (이 레이어만 자기 길이로 계속)"), layerPage);
+    m_layerHold = new QCheckBox(QStringLiteral("마지막 화면 유지 (반복 안 할 때)"), layerPage);
+    lf->addRow(QString(), m_layerRepeat);
+    lf->addRow(QString(), m_layerHold);
+    auto* layerHint = new QLabel(QStringLiteral("같은 영역 안에서 위쪽 레이어가 화면 앞에 그려집니다.\n"
+                                                "영역의 맨 위 레이어 = '영역' 탭의 플레이리스트.\n"
+                                                "반복/마지막 화면 유지 레이어는 장면 길이에 포함되지 않습니다 "
+                                                "(모든 레이어가 그렇다면 끝없이 재생)."),
                                  layerPage);
     layerHint->setObjectName("hintLabel");
     layerHint->setWordWrap(true);
@@ -168,7 +179,7 @@ TimelinePropertyPanel::TimelinePropertyPanel(QWidget* parent)
     connect(m_browse, &QPushButton::clicked, this, &TimelinePropertyPanel::browseSource);
     connect(m_layerName, &QLineEdit::editingFinished, this, &TimelinePropertyPanel::commitLayer);
     connect(m_layerRegion, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &TimelinePropertyPanel::commitLayer);
-    for (QCheckBox* c : {m_layerVisible, m_layerSound, m_layerLocked})
+    for (QCheckBox* c : {m_layerVisible, m_layerSound, m_layerLocked, m_layerRepeat, m_layerHold})
         connect(c, &QCheckBox::toggled, this, &TimelinePropertyPanel::commitLayer);
     connect(m_cueName, &QLineEdit::editingFinished, this, &TimelinePropertyPanel::commitCue);
     connect(m_cueTime, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &TimelinePropertyPanel::commitCue);
@@ -190,11 +201,17 @@ void TimelinePropertyPanel::display(const Timeline& timeline, const std::set<std
             const bool single = clips.size() == 1;
             m_clipTitle->setText(single ? QStringLiteral("클립")
                                         : QStringLiteral("클립 %1개 (바꾼 값이 모두에 적용)").arg(clips.size()));
-            m_source->setText(single ? QFileInfo(QString::fromStdString(first->source)).fileName()
-                                     : QStringLiteral("(여러 개)"));
+            const bool isFile = first->kind == ClipKind::File;
+            QString sourceText = QFileInfo(QString::fromStdString(first->source)).fileName();
+            if (first->kind == ClipKind::Live)
+                sourceText = QStringLiteral("라이브: ") + QString::fromStdString(first->source);
+            else if (first->kind == ClipKind::Ticker)
+                sourceText = QStringLiteral("흐르는 자막");
+            m_source->setText(single ? sourceText : QStringLiteral("(여러 개)"));
             m_source->setToolTip(QString::fromStdString(first->source));
-            m_browse->setEnabled(single);
-            m_inPoint->setEnabled(single);
+            m_browse->setEnabled(single && isFile);
+            m_inPoint->setEnabled(single && isFile);
+            m_loop->setEnabled(isFile);
             m_start->setValue(first->start);
             m_duration->setValue(first->duration);
             m_inPoint->setValue(first->inPoint);
@@ -204,7 +221,11 @@ void TimelinePropertyPanel::display(const Timeline& timeline, const std::set<std
             m_volume->setValue(qRound(first->volume * 100.0));
             m_loop->setChecked(first->loop);
             QString info;
-            if (single) {
+            if (single && first->kind == ClipKind::Ticker) {
+                info = QStringLiteral("자막 문구/글꼴은 '영역' 탭에서 편집 (영역 맨 위 레이어일 때)");
+            } else if (single && first->kind == ClipKind::Live) {
+                info = QStringLiteral("캡처보드/웹캠 입력");
+            } else if (single) {
                 const MediaInfo mi = probeMediaCached(first->source);
                 if (!mi.ok)
                     info = QStringLiteral("파일을 읽을 수 없음");
@@ -217,6 +238,8 @@ void TimelinePropertyPanel::display(const Timeline& timeline, const std::set<std
                                .arg(mi.hasVideo && mi.hasAudio ? QStringLiteral(" + 소리") : QString())
                                .arg(QString::fromStdString(formatTimeText(mi.duration)));
             }
+            if (single && first->autoDuration)
+                info += QStringLiteral("\n길이: 자동 (파일 길이)");
             m_mediaInfo->setText(info);
             m_stack->setCurrentIndex(1);
         }
@@ -238,6 +261,9 @@ void TimelinePropertyPanel::display(const Timeline& timeline, const std::set<std
         m_layerVisible->setChecked(l.visible);
         m_layerSound->setChecked(!l.muted);
         m_layerLocked->setChecked(l.locked);
+        m_layerRepeat->setChecked(l.repeat);
+        m_layerHold->setChecked(l.holdLast);
+        m_layerHold->setEnabled(!l.repeat);
         m_stack->setCurrentIndex(2);
     } else {
         m_stack->setCurrentIndex(0);
@@ -255,6 +281,13 @@ void TimelinePropertyPanel::commitClips()
     if (!first)
         return;
     const double shift = m_start->value() - first->start;
+    // 플레이리스트 형태(빈틈없이 배치)였던 레이어는 길이/페이드를 바꿔도 다시 이어 붙임
+    std::set<int> packed;
+    if (s != m_start)
+        for (int i = 0; i < static_cast<int>(tl.layers.size()); ++i)
+            if (isPlaylistCompatible(tl.layers[static_cast<std::size_t>(i)]))
+                packed.insert(i);
+    std::set<int> touched;
     for (const std::string& id : m_clips) {
         TimelineClip* c = clipById(tl, id);
         const ClipLocation loc = findClip(tl, id);
@@ -262,8 +295,10 @@ void TimelinePropertyPanel::commitClips()
             continue;
         if (s == m_start)
             c->start = std::max(0.0, c->start + shift);
-        else if (s == m_duration)
+        else if (s == m_duration) {
             c->duration = std::max(kMinClipDuration, m_duration->value());
+            c->autoDuration = false;
+        }
         else if (s == m_inPoint)
             c->inPoint = m_inPoint->value();
         else if (s == m_fadeIn)
@@ -276,7 +311,11 @@ void TimelinePropertyPanel::commitClips()
             c->volume = m_volume->value() / 100.0;
         else if (s == m_loop)
             c->loop = m_loop->isChecked();
+        touched.insert(loc.layer);
     }
+    for (int l : touched)
+        if (packed.count(l))
+            packLayer(tl.layers[static_cast<std::size_t>(l)], nullptr);
     if (tl != m_tl) {
         m_tl = tl;
         emit edited(tl);
@@ -312,6 +351,8 @@ void TimelinePropertyPanel::commitLayer()
     l.visible = m_layerVisible->isChecked();
     l.muted = !m_layerSound->isChecked();
     l.locked = m_layerLocked->isChecked();
+    l.repeat = m_layerRepeat->isChecked();
+    l.holdLast = !l.repeat && m_layerHold->isChecked();
     if (tl != m_tl) {
         m_tl = tl;
         emit edited(tl);

@@ -1,5 +1,7 @@
 #include "config/ProjectSerializer.h"
 
+#include "core/LayerContent.h"
+
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -70,32 +72,6 @@ QJsonObject tickerToJson(const TickerConfig& t)
     return o;
 }
 
-QJsonObject contentToJson(const RegionContent& c)
-{
-    QJsonObject o;
-    o["regionId"] = qs(c.regionId);
-    o["kind"] = c.kind == ContentKind::Ticker ? QStringLiteral("ticker") : QStringLiteral("playlist");
-    o["loop"] = c.loopPlaylist;
-    QJsonArray items;
-    for (const auto& it : c.items) {
-        QJsonObject i;
-        i["id"] = qs(it.id);
-        i["type"] = it.type == ItemType::Live ? QStringLiteral("live") : QStringLiteral("file");
-        i["source"] = qs(it.source);
-        if (it.type == ItemType::Live) {
-            i["liveSize"] = qs(it.liveSize);
-            i["liveFps"] = it.liveFps;
-        }
-        i["duration"] = it.duration;
-        i["transition"] = QString::fromLatin1(transitionKey(it.transition));
-        i["transitionDuration"] = it.transitionDuration;
-        items.append(i);
-    }
-    o["items"] = items;
-    o["ticker"] = tickerToJson(c.ticker);
-    return o;
-}
-
 QJsonObject timelineToJson(const Timeline& t)
 {
     QJsonObject o;
@@ -109,11 +85,21 @@ QJsonObject timelineToJson(const Timeline& t)
         lo["visible"] = l.visible;
         lo["muted"] = l.muted;
         lo["locked"] = l.locked;
+        lo["repeat"] = l.repeat;
+        lo["holdLast"] = l.holdLast;
         QJsonArray clips;
         for (const auto& c : l.clips) {
             QJsonObject co;
             co["id"] = qs(c.id);
+            co["kind"] = QString::fromLatin1(clipKindKey(c.kind));
             co["source"] = qs(c.source);
+            if (c.kind == ClipKind::Live) {
+                co["liveSize"] = qs(c.liveSize);
+                co["liveFps"] = c.liveFps;
+            }
+            if (c.kind == ClipKind::Ticker)
+                co["ticker"] = tickerToJson(c.ticker);
+            co["autoDuration"] = c.autoDuration;
             co["start"] = c.start;
             co["duration"] = c.duration;
             co["inPoint"] = c.inPoint;
@@ -140,6 +126,8 @@ QJsonObject timelineToJson(const Timeline& t)
     return o;
 }
 
+TickerConfig tickerFromJson(const QJsonObject& o);
+
 Timeline timelineFromJson(const QJsonObject& o)
 {
     Timeline t;
@@ -157,13 +145,23 @@ Timeline timelineFromJson(const QJsonObject& o)
         l.visible = lo.value("visible").toBool(true);
         l.muted = lo.value("muted").toBool(false);
         l.locked = lo.value("locked").toBool(false);
+        l.repeat = lo.value("repeat").toBool(false);
+        l.holdLast = !l.repeat && lo.value("holdLast").toBool(false);
         for (const QJsonValue& cv : lo.value("clips").toArray()) {
             const QJsonObject co = cv.toObject();
             TimelineClip c;
             c.id = ss(co.value("id").toString());
             if (c.id.empty())
                 c.id = generateId();
+            ClipKind kind;
+            if (clipKindFromKey(ss(co.value("kind").toString("file")), kind))
+                c.kind = kind;
             c.source = ss(co.value("source").toString());
+            c.liveSize = ss(co.value("liveSize").toString());
+            c.liveFps = std::clamp(co.value("liveFps").toDouble(0.0), 0.0, 1000.0);
+            if (c.kind == ClipKind::Ticker)
+                c.ticker = tickerFromJson(co.value("ticker").toObject());
+            c.autoDuration = co.value("autoDuration").toBool(false);
             c.start = std::max(0.0, co.value("start").toDouble(0.0));
             c.duration = std::max(0.04, co.value("duration").toDouble(5.0));
             c.inPoint = std::max(0.0, co.value("inPoint").toDouble(0.0));
@@ -301,6 +299,32 @@ RegionContent contentFromJson(const QJsonObject& o)
     return c;
 }
 
+// 버전 2 '영역별 콘텐츠' 장면 -> 영역마다 플레이리스트 레이어 1개 (영역 순서대로)
+Timeline timelineFromContents(const QJsonArray& contents, const Project& p)
+{
+    std::vector<RegionContent> list;
+    for (const QJsonValue& v : contents)
+        list.push_back(contentFromJson(v.toObject()));
+    Timeline t;
+    t.endAction = TimelineEnd::Hold;
+    for (const Region& r : p.regions) {
+        for (const RegionContent& c : list) {
+            if (c.regionId != r.id || c.isEmpty())
+                continue;
+            TimelineLayer layer;
+            layer.id = generateId();
+            layer.name = r.name;
+            layer.regionId = r.id;
+            contentToLayer(c, layer, nullptr);
+            layer.needsPacking = true; // 실제 파일 길이로 다시 배치
+            layer.muted = true;        // 이전 버전 플레이리스트는 소리를 내지 않았음
+            t.layers.push_back(std::move(layer));
+            break;
+        }
+    }
+    return t;
+}
+
 bool readRegions(const QJsonObject& root, Project& p, int version, QString* error)
 {
     Scene migrated; // 버전 1의 영역별 콘텐츠를 담을 장면
@@ -336,7 +360,14 @@ bool readRegions(const QJsonObject& root, Project& p, int version, QString* erro
                 item.id = generateId();
                 item.source = source;
                 c.items.push_back(item);
-                migrated.contents.push_back(std::move(c));
+                TimelineLayer layer;
+                layer.id = generateId();
+                layer.name = r.name;
+                layer.regionId = r.id;
+                contentToLayer(c, layer, nullptr);
+                layer.needsPacking = true; // 실제 파일 길이로 다시 배치
+                layer.muted = true;        // 이전 버전 플레이리스트는 소리를 내지 않았음
+                migrated.timeline.layers.push_back(std::move(layer));
             }
         }
         p.regions.push_back(std::move(r));
@@ -360,10 +391,6 @@ void normalizeProject(Project& p)
     for (Scene& s : p.scenes) {
         if (s.id.empty())
             s.id = generateId();
-        auto& c = s.contents;
-        c.erase(std::remove_if(c.begin(), c.end(),
-                               [&](const RegionContent& rc) { return !p.findRegion(rc.regionId); }),
-                c.end());
         for (TimelineLayer& layer : s.timeline.layers)
             if (!layer.regionId.empty() && !p.findRegion(layer.regionId))
                 layer.regionId.clear(); // 삭제된 영역: 소리만 재생
@@ -401,13 +428,7 @@ QByteArray projectToJson(const Project& project)
         QJsonObject o;
         o["id"] = qs(s.id);
         o["name"] = qs(s.name);
-        o["kind"] = s.kind == SceneKind::Timeline ? QStringLiteral("timeline") : QStringLiteral("regions");
-        if (s.kind == SceneKind::Timeline)
-            o["timeline"] = timelineToJson(s.timeline);
-        QJsonArray contents;
-        for (const auto& c : s.contents)
-            contents.append(contentToJson(c));
-        o["contents"] = contents;
+        o["timeline"] = timelineToJson(s.timeline);
         scenes.append(o);
     }
     root["scenes"] = scenes;
@@ -491,11 +512,10 @@ bool projectFromJson(const QByteArray& json, Project& out, QString* error)
             Scene s;
             s.id = ss(o.value("id").toString());
             s.name = ss(o.value("name").toString());
-            s.kind = o.value("kind").toString() == QLatin1String("timeline") ? SceneKind::Timeline : SceneKind::Regions;
-            if (s.kind == SceneKind::Timeline)
+            if (version >= 3 || o.value("kind").toString() == QLatin1String("timeline"))
                 s.timeline = timelineFromJson(o.value("timeline").toObject());
-            for (const QJsonValue& c : o.value("contents").toArray())
-                s.contents.push_back(contentFromJson(c.toObject()));
+            else
+                s.timeline = timelineFromContents(o.value("contents").toArray(), p);
             p.scenes.push_back(std::move(s));
         }
 

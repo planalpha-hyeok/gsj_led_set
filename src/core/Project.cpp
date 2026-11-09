@@ -27,22 +27,40 @@ bool TickerConfig::operator==(const TickerConfig& o) const
 
 bool TimelineClip::operator==(const TimelineClip& o) const
 {
-    return id == o.id && source == o.source && start == o.start && duration == o.duration && inPoint == o.inPoint &&
-           fadeIn == o.fadeIn && fadeOut == o.fadeOut && opacity == o.opacity && volume == o.volume && loop == o.loop;
+    return id == o.id && kind == o.kind && source == o.source && liveSize == o.liveSize && liveFps == o.liveFps &&
+           ticker == o.ticker && start == o.start && duration == o.duration && autoDuration == o.autoDuration &&
+           inPoint == o.inPoint && fadeIn == o.fadeIn && fadeOut == o.fadeOut && opacity == o.opacity &&
+           volume == o.volume && loop == o.loop;
 }
 
 bool TimelineLayer::operator==(const TimelineLayer& o) const
 {
     return id == o.id && name == o.name && regionId == o.regionId && visible == o.visible && muted == o.muted &&
-           locked == o.locked && clips == o.clips;
+           locked == o.locked && repeat == o.repeat && holdLast == o.holdLast && clips == o.clips;
+}
+
+double TimelineLayer::contentEnd() const
+{
+    double end = 0.0;
+    for (const auto& clip : clips)
+        end = std::max(end, clip.end());
+    return end;
 }
 
 double Timeline::length() const
 {
     double len = 0.0;
     for (const auto& layer : layers)
-        for (const auto& clip : layer.clips)
-            len = std::max(len, clip.end());
+        if (!layer.repeat && !layer.holdLast)
+            len = std::max(len, layer.contentEnd());
+    return len;
+}
+
+double Timeline::contentEnd() const
+{
+    double len = 0.0;
+    for (const auto& layer : layers)
+        len = std::max(len, layer.contentEnd());
     return len;
 }
 
@@ -65,22 +83,6 @@ bool RegionContent::operator==(const RegionContent& o) const
 }
 
 // ---------------------------------------------------------------- 검색
-
-RegionContent* Scene::contentFor(const std::string& regionId)
-{
-    for (auto& c : contents)
-        if (c.regionId == regionId)
-            return &c;
-    return nullptr;
-}
-
-const RegionContent* Scene::contentFor(const std::string& regionId) const
-{
-    for (const auto& c : contents)
-        if (c.regionId == regionId)
-            return &c;
-    return nullptr;
-}
 
 namespace {
 template <typename T>
@@ -205,6 +207,24 @@ bool effectiveHardwareDecoding(const Project& project, const Region& region)
     case DecodeMode::Default: break;
     }
     return project.hardwareDecoding;
+}
+
+const char* clipKindKey(ClipKind k)
+{
+    switch (k) {
+    case ClipKind::File: return "file";
+    case ClipKind::Live: return "live";
+    case ClipKind::Ticker: return "ticker";
+    }
+    return "file";
+}
+
+bool clipKindFromKey(const std::string& key, ClipKind& out)
+{
+    if (key == "file") { out = ClipKind::File; return true; }
+    if (key == "live") { out = ClipKind::Live; return true; }
+    if (key == "ticker") { out = ClipKind::Ticker; return true; }
+    return false;
 }
 
 const char* tickerDirectionKey(TickerDirection d)

@@ -43,17 +43,19 @@ public:
     QString editingSceneId() const { return m_editingScene; }
     const Scene* editingScene() const;
     void setEditingScene(const QString& id);
-    QString addScene(SceneKind kind = SceneKind::Regions);
-    void setSceneKind(const QString& id, SceneKind kind);
-    // 타임라인 장면 편집
+    QString addScene();
+    // 장면 타임라인 편집
     void setTimeline(const QString& sceneId, const Timeline& timeline);
     QString duplicateScene(const QString& id);
     void renameScene(const QString& id, const QString& name);
     bool removeScene(const QString& id); // 마지막 장면은 삭제 불가
     void moveScene(const QString& id, int delta);
 
-    // 영역 콘텐츠 (편집 중인 장면 기준)
-    const RegionContent* contentFor(const QString& sceneId, const QString& regionId) const;
+    // 영역 플레이리스트/자막 = 장면 타임라인에서 그 영역의 첫 레이어를 간단히 보여주는 형태
+    RegionContent contentFor(const QString& sceneId, const QString& regionId) const;
+    // 영역의 첫 레이어를 플레이리스트 화면으로 편집할 수 있는지 (타임라인에서 자유 배치했으면 false)
+    bool isContentEditable(const QString& sceneId, const QString& regionId) const;
+    // 영역의 첫 레이어에 반영 (레이어가 없으면 만듦)
     void setContent(const QString& sceneId, const RegionContent& content);
 
     // 스케줄 / 운영
@@ -77,7 +79,7 @@ signals:
     void regionSelected(const QString& id);
     void scenesChanged();
     void editingSceneChanged(const QString& id);
-    void contentChanged(const QString& sceneId, const QString& regionId);
+    void contentChanged(const QString& sceneId, const QString& regionId); // regionId 비어 있음 = 여러 영역
     void scheduleChanged();
     void playbackSettingsChanged();
     void interactiveChanged();
@@ -85,6 +87,7 @@ signals:
 
 private:
     void setDirty(bool dirty);
+    void packLoadedLayers();
 
     Project m_project;
     QString m_filePath;

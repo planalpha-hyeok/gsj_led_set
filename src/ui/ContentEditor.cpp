@@ -8,6 +8,7 @@
 #include <QComboBox>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMessageBox>
 #include <QStackedWidget>
 #include <QVBoxLayout>
 
@@ -61,28 +62,27 @@ void ContentEditor::reload()
     const QString sceneId = m_controller->editingSceneId();
     const QString regionId = m_controller->selectedRegionId();
     const Scene* scene = m_controller->editingScene();
-    const bool valid = scene && m_controller->project().findRegion(regionId.toStdString());
+    const Region* region = m_controller->project().findRegion(regionId.toStdString());
+    const bool valid = scene && region;
     setEnabled(valid);
-    m_sceneLabel->setText(scene ? QStringLiteral("편집 중인 장면: %1").arg(QString::fromStdString(scene->name))
-                                : QString());
-    if (scene && scene->kind == SceneKind::Timeline) {
-        m_sceneLabel->setText(QStringLiteral("편집 중인 장면 '%1'은(는) 타임라인 장면입니다.\n"
-                                             "콘텐츠는 아래 '타임라인' 창에서 편집하세요.")
-                                  .arg(QString::fromStdString(scene->name)));
-        m_kind->setEnabled(false);
-        m_stack->setEnabled(false);
+    if (!valid) {
+        m_sceneLabel->setText(scene ? QStringLiteral("편집 중인 장면: %1").arg(QString::fromStdString(scene->name))
+                                    : QString());
         return;
     }
-    m_kind->setEnabled(true);
-    m_stack->setEnabled(true);
-    if (!valid)
-        return;
+    const bool editable = m_controller->isContentEditable(sceneId, regionId);
+    if (!editable) {
+        m_sceneLabel->setText(QStringLiteral("장면 '%1' / 영역 '%2'의 첫 레이어는 타임라인에서 자유롭게 배치되어 있습니다.\n"
+                                             "아래 '타임라인' 창에서 편집하세요.")
+                                  .arg(QString::fromStdString(scene->name), QString::fromStdString(region->name)));
+    } else {
+        m_sceneLabel->setText(QStringLiteral("편집 중인 장면: %1  (타임라인의 '%2' 첫 레이어)")
+                                  .arg(QString::fromStdString(scene->name), QString::fromStdString(region->name)));
+    }
+    m_kind->setEnabled(editable);
+    m_stack->setEnabled(editable);
 
-    RegionContent content;
-    if (const RegionContent* existing = m_controller->contentFor(sceneId, regionId))
-        content = *existing;
-    content.regionId = regionId.toStdString();
-
+    const RegionContent content = currentContent();
     m_loading = true;
     m_kind->setCurrentIndex(content.kind == ContentKind::Ticker ? 1 : 0);
     m_stack->setCurrentIndex(content.kind == ContentKind::Ticker ? 1 : 0);
@@ -93,21 +93,36 @@ void ContentEditor::reload()
 
 RegionContent ContentEditor::currentContent() const
 {
-    RegionContent content;
     const QString regionId = m_controller->selectedRegionId();
-    if (const RegionContent* existing = m_controller->contentFor(m_controller->editingSceneId(), regionId))
-        content = *existing;
+    RegionContent content = m_controller->contentFor(m_controller->editingSceneId(), regionId);
     content.regionId = regionId.toStdString();
     return content;
 }
 
 void ContentEditor::onKindChanged(int index)
 {
-    m_stack->setCurrentIndex(index);
     if (m_loading)
         return;
     RegionContent content = currentContent();
-    content.kind = static_cast<ContentKind>(m_kind->itemData(index).toInt());
+    const auto kind = static_cast<ContentKind>(m_kind->itemData(index).toInt());
+    // 종류를 바꾸면 레이어의 클립이 바뀜: 내용이 있으면 확인
+    if (!content.isEmpty()) {
+        const auto answer = QMessageBox::question(
+            this, QStringLiteral("종류 변경"),
+            QStringLiteral("종류를 바꾸면 이 영역 첫 레이어의 현재 내용(%1)이 지워집니다. 계속하시겠습니까?")
+                .arg(content.kind == ContentKind::Ticker ? QStringLiteral("자막")
+                                                         : QStringLiteral("항목 %1개").arg(content.items.size())));
+        if (answer != QMessageBox::Yes) {
+            reload();
+            return;
+        }
+    }
+    m_stack->setCurrentIndex(index);
+    content.kind = kind;
+    content.items.clear();
+    if (kind == ContentKind::Ticker)
+        content.ticker = TickerConfig{};
+    content.loopPlaylist = true;
     store(content);
     reload();
 }

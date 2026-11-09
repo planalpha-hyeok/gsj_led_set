@@ -1,8 +1,9 @@
-// 프로젝트 파일 저장/불러오기 검사 (버전 2 + 버전 1 자동 변환)
+// 프로젝트 파일 저장/불러오기 검사 (버전 3 + 버전 2/1 자동 변환)
 
 #include "TestUtil.h"
 
 #include "config/ProjectSerializer.h"
+#include "core/LayerContent.h"
 
 using namespace led;
 
@@ -30,27 +31,38 @@ static Project makeSample()
     p.hardwareDecoding = false;
     p.audioDevice = "스피커 (USB Audio)";
 
+    // 장면 1: 영역별 플레이리스트/자막 (= 영역의 레이어)
     Scene s;
     s.id = "s1";
     s.name = "오전";
-    RegionContent c;
-    c.regionId = "r1";
-    c.loopPlaylist = false;
-    PlaylistItem a;
+    TimelineLayer playlist;
+    playlist.id = "P1";
+    playlist.name = "메인 화면";
+    playlist.regionId = "r1";
+    playlist.repeat = false;
+    playlist.holdLast = true;
+    TimelineClip a;
     a.id = "i1";
     a.source = "C:/콘텐츠/메인 영상.mp4";
-    PlaylistItem b;
+    a.autoDuration = true;
+    a.duration = 20.0;
+    TimelineClip b;
     b.id = "i2";
     b.source = "C:/콘텐츠/포스터.png";
+    b.start = 18.0;
     b.duration = 7.5;
-    b.transition = TransitionType::Fade;
-    b.transitionDuration = 2.0;
-    c.items = {a, b};
-    s.contents.push_back(c);
+    b.fadeIn = 2.0;
+    playlist.clips = {a, b};
 
-    RegionContent t;
-    t.regionId = "r2";
-    t.kind = ContentKind::Ticker;
+    TimelineLayer tickerLayer;
+    tickerLayer.id = "T1";
+    tickerLayer.name = "하단 자막";
+    tickerLayer.regionId = "r2";
+    tickerLayer.repeat = true;
+    TimelineClip t;
+    t.id = "tk";
+    t.kind = ClipKind::Ticker;
+    t.duration = 60.0;
     t.ticker.lines = {"환영합니다", "오늘 행사 안내"};
     t.ticker.textFile = "C:/자막/공지.txt";
     t.ticker.fontFamily = "맑은 고딕";
@@ -66,7 +78,22 @@ static Project makeSample()
     t.ticker.speed = 240.0;
     t.ticker.direction = TickerDirection::Up;
     t.ticker.gap = 333;
-    s.contents.push_back(t);
+    tickerLayer.clips = {t};
+
+    TimelineLayer live;
+    live.id = "LV";
+    live.name = "카메라";
+    live.regionId = "r1";
+    live.repeat = true;
+    TimelineClip cam;
+    cam.id = "cam";
+    cam.kind = ClipKind::Live;
+    cam.source = "USB Capture HDMI";
+    cam.liveSize = "1920x1080";
+    cam.liveFps = 59.94;
+    cam.duration = 3600.0;
+    live.clips = {cam};
+    s.timeline.layers = {playlist, tickerLayer, live};
     p.scenes.push_back(s);
 
     Scene s2;
@@ -74,10 +101,10 @@ static Project makeSample()
     s2.name = "오후";
     p.scenes.push_back(s2);
 
+    // 장면 3: 큐 타임라인
     Scene s3;
     s3.id = "s3";
     s3.name = "공연";
-    s3.kind = SceneKind::Timeline;
     TimelineLayer layer;
     layer.id = "L1";
     layer.name = "배경";
@@ -162,28 +189,34 @@ static void testRoundTrip()
 
     CHECK(loaded.scenes.size() == 3);
     if (loaded.scenes.size() == 3) {
+        for (std::size_t i = 0; i < 3; ++i)
+            CHECK(loaded.scenes[i].timeline == original.scenes[i].timeline);
         const Scene& t = loaded.scenes[2];
-        CHECK(t.kind == SceneKind::Timeline);
-        CHECK(t.timeline == original.scenes[2].timeline);
         CHECK(t.timeline.endAction == TimelineEnd::Loop);
         CHECK(t.timeline.layers.size() == 2 && t.timeline.layers[1].regionId.empty());
-        CHECK(loaded.scenes[0].kind == SceneKind::Regions);
-    }
-    if (loaded.scenes.size() == 3) {
-        const Scene& s = loaded.scenes[0];
-        CHECK(s.name == "오전");
-        const RegionContent* c = s.contentFor("r1");
-        CHECK(c != nullptr);
-        if (c) {
-            CHECK(*c == original.scenes[0].contents[0]);
-            CHECK(!c->loopPlaylist);
-            CHECK(c->items.size() == 2);
-        }
-        const RegionContent* t = s.contentFor("r2");
-        CHECK(t != nullptr);
-        if (t) {
-            CHECK(t->kind == ContentKind::Ticker);
-            CHECK(t->ticker == original.scenes[0].contents[1].ticker);
+
+        const Timeline& tl = loaded.scenes[0].timeline;
+        CHECK(tl.layers.size() == 3);
+        if (tl.layers.size() == 3) {
+            CHECK(tl.layers[0].holdLast && !tl.layers[0].repeat);
+            CHECK(tl.layers[0].clips.size() == 2 && tl.layers[0].clips[0].autoDuration);
+            CHECK(tl.layers[1].repeat && tl.layers[1].clips.size() == 1);
+            if (!tl.layers[1].clips.empty()) {
+                CHECK(tl.layers[1].clips[0].kind == ClipKind::Ticker);
+                CHECK(tl.layers[1].clips[0].ticker == original.scenes[0].timeline.layers[1].clips[0].ticker);
+            }
+            if (!tl.layers[2].clips.empty()) {
+                const TimelineClip& c = tl.layers[2].clips[0];
+                CHECK(c.kind == ClipKind::Live && c.liveSize == "1920x1080" && test::near(c.liveFps, 59.94));
+            }
+            // 플레이리스트 화면으로 보기
+            const RegionContent rc = layerToContent(&tl.layers[0], "r1");
+            CHECK(!rc.loopPlaylist && rc.items.size() == 2);
+            if (rc.items.size() == 2) {
+                CHECK(rc.items[0].duration == 0.0);   // 자동
+                CHECK(rc.items[1].transition == TransitionType::Fade && test::near(rc.items[1].transitionDuration, 2.0));
+            }
+            CHECK(layerToContent(&tl.layers[1], "r2").kind == ContentKind::Ticker);
         }
     }
 
@@ -233,16 +266,17 @@ static void testVersion1Migration()
     CHECK(p.regions.size() == 2);
     CHECK(p.scenes.size() == 1);
     if (p.scenes.size() == 1) {
-        const Scene& s = p.scenes[0];
-        CHECK(s.contents.size() == 1); // 콘텐츠 없는 영역은 제외
-        const RegionContent* c = s.contentFor("a");
-        CHECK(c != nullptr);
-        if (c) {
-            CHECK(c->kind == ContentKind::Playlist);
-            CHECK(c->items.size() == 1);
-            CHECK(!c->loopPlaylist);
-            if (!c->items.empty())
-                CHECK(c->items[0].source == "C:/a.mp4");
+        const Timeline& tl = p.scenes[0].timeline;
+        CHECK(tl.layers.size() == 1); // 콘텐츠 없는 영역은 제외
+        if (tl.layers.size() == 1) {
+            const TimelineLayer& l = tl.layers[0];
+            CHECK(l.regionId == "a" && l.name == "왼쪽");
+            CHECK(!l.repeat && l.holdLast && l.needsPacking && l.muted);
+            CHECK(l.clips.size() == 1);
+            if (!l.clips.empty()) {
+                CHECK(l.clips[0].source == "C:/a.mp4");
+                CHECK(l.clips[0].autoDuration);
+            }
         }
     }
     if (p.regions.size() == 2) {
@@ -281,7 +315,7 @@ static void testInvalidInput()
     CHECK(!projectFromJson(R"({"version": 99, "canvas": {"width": 100, "height": 100}})", p, &error));
     CHECK(!error.isEmpty());
 
-    CHECK(!projectFromJson(R"({"version": 2, "canvas": {"width": 0, "height": 100}})", p, &error));
+    CHECK(!projectFromJson(R"({"version": 3, "canvas": {"width": 0, "height": 100}})", p, &error));
     CHECK(!projectFromJson(
         R"({"version": 2, "canvas": {"width": 100, "height": 100},
             "regions": [{"name": "a", "x": 0, "y": 0, "width": 0, "height": 10}]})",
@@ -292,28 +326,108 @@ static void testInvalidInput()
         p, &error));
 }
 
+static void testVersion2Migration()
+{
+    // 버전 2: 영역별 콘텐츠 장면 + 타임라인 장면
+    const char* v2 = R"({
+        "version": 2,
+        "canvas": {"width": 1920, "height": 1080},
+        "regions": [
+            {"id": "r1", "name": "메인", "x": 0, "y": 0, "width": 1920, "height": 900},
+            {"id": "r2", "name": "자막", "x": 0, "y": 900, "width": 1920, "height": 180}
+        ],
+        "scenes": [
+            {"id": "s1", "name": "기본", "kind": "regions", "contents": [
+                {"regionId": "r2", "kind": "ticker", "loop": true, "items": [],
+                 "ticker": {"lines": ["안녕"], "speed": 99}},
+                {"regionId": "r1", "kind": "playlist", "loop": true, "items": [
+                    {"id": "a", "type": "file", "source": "C:/a.mp4", "duration": 0},
+                    {"id": "b", "type": "file", "source": "C:/b.png", "duration": 4,
+                     "transition": "fade", "transitionDuration": 1},
+                    {"id": "c", "type": "live", "source": "Cam", "liveSize": "1280x720", "liveFps": 30,
+                     "duration": 6}
+                ]},
+                {"regionId": "zzz", "kind": "playlist", "items": [{"id": "x", "source": "C:/x.mp4"}]}
+            ]},
+            {"id": "s2", "name": "공연", "kind": "timeline", "timeline": {
+                "endAction": "stop",
+                "layers": [{"id": "L", "name": "배경", "regionId": "r1",
+                            "clips": [{"id": "k", "source": "C:/k.mp4", "start": 2, "duration": 3}]}],
+                "cues": []}}
+        ]
+    })";
+    Project p;
+    QString error;
+    CHECK(projectFromJson(v2, p, &error));
+    CHECK(p.scenes.size() == 2);
+    if (p.scenes.size() != 2)
+        return;
+
+    // 영역 순서대로 레이어 (없는 영역 콘텐츠는 제외)
+    const Timeline& tl = p.scenes[0].timeline;
+    CHECK(tl.layers.size() == 2);
+    if (tl.layers.size() == 2) {
+        const TimelineLayer& pl = tl.layers[0];
+        CHECK(pl.regionId == "r1" && pl.repeat && !pl.holdLast && pl.needsPacking && pl.muted);
+        CHECK(pl.clips.size() == 3);
+        if (pl.clips.size() == 3) {
+            CHECK(pl.clips[0].autoDuration);
+            CHECK(!pl.clips[1].autoDuration && test::near(pl.clips[1].duration, 4.0) && test::near(pl.clips[1].fadeIn, 1.0));
+            CHECK(pl.clips[2].kind == ClipKind::Live && pl.clips[2].liveSize == "1280x720");
+            // 실제 길이로 다시 배치 (영상 = 8초로 가정)
+            TimelineLayer packed = pl;
+            packLayer(packed, [](const TimelineClip& c) { return c.source == "C:/a.mp4" ? 8.0 : 0.0; });
+            CHECK(test::near(packed.clips[0].duration, 8.0));
+            CHECK(test::near(packed.clips[1].start, 7.0));  // 페이드 1초 겹침
+            CHECK(test::near(packed.clips[2].start, 11.0));
+            CHECK(!packed.needsPacking);
+            CHECK(isPlaylistCompatible(packed));
+        }
+        const TimelineLayer& tk = tl.layers[1];
+        CHECK(tk.regionId == "r2" && tk.repeat && tk.clips.size() == 1);
+        if (!tk.clips.empty()) {
+            CHECK(tk.clips[0].kind == ClipKind::Ticker);
+            CHECK(tk.clips[0].ticker.lines.size() == 1 && test::near(tk.clips[0].ticker.speed, 99.0));
+        }
+    }
+    CHECK(tl.length() == 0.0); // 반복 레이어만 있음: 끝없이 재생
+
+    const Timeline& t2 = p.scenes[1].timeline;
+    CHECK(t2.endAction == TimelineEnd::Stop);
+    CHECK(t2.layers.size() == 1 && t2.layers[0].clips.size() == 1 && !t2.layers[0].repeat);
+    CHECK(test::near(t2.length(), 5.0));
+}
+
 static void testNormalize()
 {
     Project p;
     QString error;
-    // 장면 없음 -> 기본 장면 생성, 없는 영역을 가리키는 콘텐츠 제거
+    // 장면 없음 -> 기본 장면 생성
     CHECK(projectFromJson(
-        R"({"version": 2, "canvas": {"width": 100, "height": 100},
+        R"({"version": 3, "canvas": {"width": 100, "height": 100},
             "regions": [{"id": "r", "name": "a", "x": 0, "y": 0, "width": 10, "height": 10, "fit": "unknown"}],
             "scenes": []})",
         p, &error));
     CHECK(p.scenes.size() == 1);
     CHECK(p.regions.size() == 1 && p.regions[0].fit == FitMode::Stretch);
 
+    // 없는 영역을 가리키는 레이어 -> 소리 전용
     CHECK(projectFromJson(
-        R"({"version": 2, "canvas": {"width": 100, "height": 100},
+        R"({"version": 3, "canvas": {"width": 100, "height": 100},
             "regions": [{"id": "r", "name": "a", "x": 0, "y": 0, "width": 10, "height": 10}],
-            "scenes": [{"id": "s", "name": "x", "contents": [{"regionId": "zzz", "kind": "playlist"},
-                                                               {"regionId": "r", "kind": "ticker"}]}]})",
+            "scenes": [{"id": "s", "name": "x", "timeline": {"layers": [
+                {"id": "1", "regionId": "zzz", "clips": []},
+                {"id": "2", "regionId": "r", "repeat": true, "holdLast": true,
+                 "clips": [{"id": "c", "kind": "bogus", "source": "a.mp4"}]}]}}]})",
         p, &error));
-    CHECK(p.scenes.size() == 1 && p.scenes[0].contents.size() == 1);
-    if (!p.scenes.empty() && !p.scenes[0].contents.empty())
-        CHECK(p.scenes[0].contents[0].kind == ContentKind::Ticker);
+    CHECK(p.scenes.size() == 1 && p.scenes[0].timeline.layers.size() == 2);
+    if (p.scenes.size() == 1 && p.scenes[0].timeline.layers.size() == 2) {
+        const auto& layers = p.scenes[0].timeline.layers;
+        CHECK(layers[0].regionId.empty());
+        CHECK(layers[1].regionId == "r");
+        CHECK(layers[1].repeat && !layers[1].holdLast); // 반복이면 마지막 화면 유지는 무시
+        CHECK(!layers[1].clips.empty() && layers[1].clips[0].kind == ClipKind::File);
+    }
 }
 
 static void testHelpers()
@@ -338,6 +452,7 @@ int main()
 {
     testRoundTrip();
     testVersion1Migration();
+    testVersion2Migration();
     testInvalidInput();
     testNormalize();
     testHelpers();

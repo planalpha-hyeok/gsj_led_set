@@ -1,5 +1,9 @@
 #include "media/MediaInfo.h"
 
+#include "core/LayerContent.h"
+
+#include <algorithm>
+
 #include "media/MediaFactory.h"
 
 extern "C" {
@@ -74,6 +78,23 @@ MediaInfo probeMediaCached(const std::string& path)
     std::lock_guard<std::mutex> lock(mutex);
     cache[path] = {stamp, info};
     return info;
+}
+
+double resolveClipDuration(const TimelineClip& clip)
+{
+    switch (clip.kind) {
+    case ClipKind::Live: return kDefaultLiveDuration;
+    case ClipKind::Ticker: return kDefaultTickerDuration;
+    case ClipKind::File: break;
+    }
+    if (clip.source.empty())
+        return 0.0;
+    const MediaInfo info = probeMediaCached(clip.source);
+    if (!info.ok)
+        return 0.0;
+    if (info.still || info.duration <= 0.0)
+        return kDefaultImageDuration;
+    return std::max(0.1, info.duration - clip.inPoint);
 }
 
 } // namespace led

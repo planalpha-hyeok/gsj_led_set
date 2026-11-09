@@ -6,6 +6,10 @@ add_executable(test_timeline_edit test_timeline_edit.cpp)
 target_link_libraries(test_timeline_edit PRIVATE led_core)
 add_test(NAME timeline_edit COMMAND test_timeline_edit)
 
+add_executable(test_layer_content test_layer_content.cpp)
+target_link_libraries(test_layer_content PRIVATE led_core)
+add_test(NAME layer_content COMMAND test_layer_content)
+
 add_executable(test_schedule test_schedule.cpp)
 target_link_libraries(test_schedule PRIVATE led_core)
 add_test(NAME schedule COMMAND test_schedule)

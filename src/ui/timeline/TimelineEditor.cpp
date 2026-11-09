@@ -1,6 +1,7 @@
 #include "ui/timeline/TimelineEditor.h"
 
 #include "core/ControlCommand.h"
+#include "core/LayerContent.h"
 #include "core/TimelineEdit.h"
 #include "media/MediaInfo.h"
 #include "ui/ProjectController.h"
@@ -37,6 +38,11 @@ const char kMediaFilter[] =
 
 constexpr double kDefaultStillDuration = 5.0;
 
+QString lengthText(const Timeline& tl)
+{
+    return tl.length() > 0.0 ? QString::fromStdString(formatTimeText(tl.length())) : QStringLiteral("끝없음");
+}
+
 } // namespace
 
 TimelineEditor::TimelineEditor(ProjectController* controller, QWidget* parent)
@@ -48,9 +54,7 @@ TimelineEditor::TimelineEditor(ProjectController* controller, QWidget* parent)
     m_stack = new QStackedWidget(this);
     outer->addWidget(m_stack);
 
-    auto* notTimeline = new QLabel(QStringLiteral("편집 중인 장면이 타임라인 장면이 아닙니다.\n"
-                                                  "'장면' 탭에서 '타임라인 추가'를 누르거나 장면 종류를 '타임라인'으로 바꾸세요."),
-                                   m_stack);
+    auto* notTimeline = new QLabel(QStringLiteral("편집 중인 장면이 없습니다."), m_stack);
     notTimeline->setAlignment(Qt::AlignCenter);
     notTimeline->setObjectName("hintLabel");
     m_stack->addWidget(notTimeline);
@@ -73,11 +77,12 @@ TimelineEditor::TimelineEditor(ProjectController* controller, QWidget* parent)
     tf.setBold(true);
     m_time->setFont(tf);
     auto* addLayerBtn = new QPushButton(QStringLiteral("레이어 추가"), body);
+    addLayerBtn->setToolTip(QStringLiteral("선택한 레이어의 영역 그룹 맨 아래(화면 뒤)에 추가"));
     auto* removeLayerBtn = new QPushButton(QStringLiteral("레이어 삭제"), body);
     auto* upBtn = new QPushButton(QStringLiteral("▲"), body);
     auto* downBtn = new QPushButton(QStringLiteral("▼"), body);
-    upBtn->setToolTip(QStringLiteral("레이어를 위로 (화면 앞으로)"));
-    downBtn->setToolTip(QStringLiteral("레이어를 아래로 (화면 뒤로)"));
+    upBtn->setToolTip(QStringLiteral("레이어를 같은 영역 안에서 위로 (화면 앞으로). 맨 위 레이어 = 영역 탭의 플레이리스트"));
+    downBtn->setToolTip(QStringLiteral("레이어를 같은 영역 안에서 아래로 (화면 뒤로)"));
     auto* addFilesBtn = new QPushButton(QStringLiteral("파일 추가..."), body);
     addFilesBtn->setToolTip(QStringLiteral("선택한 레이어의 재생 위치에 영상/이미지/소리 추가"));
     auto* addCueBtn = new QPushButton(QStringLiteral("큐 추가"), body);
@@ -87,6 +92,8 @@ TimelineEditor::TimelineEditor(ProjectController* controller, QWidget* parent)
     m_endAction->addItem(QStringLiteral("끝: 정지(검은 화면)"), int(TimelineEnd::Stop));
     m_snap = new QCheckBox(QStringLiteral("자석"), body);
     m_snap->setChecked(QSettings().value(QStringLiteral("timelineSnap"), true).toBool());
+    auto* foldBtn = new QPushButton(QStringLiteral("모두 접기"), body);
+    auto* unfoldBtn = new QPushButton(QStringLiteral("모두 펴기"), body);
     auto* zoomIn = new QPushButton(QStringLiteral("＋"), body);
     auto* zoomOut = new QPushButton(QStringLiteral("－"), body);
     zoomIn->setToolTip(QStringLiteral("확대 (Ctrl+휠)"));
@@ -100,6 +107,8 @@ TimelineEditor::TimelineEditor(ProjectController* controller, QWidget* parent)
     bar->addStretch(1);
     bar->addWidget(m_endAction);
     bar->addWidget(m_snap);
+    bar->addWidget(foldBtn);
+    bar->addWidget(unfoldBtn);
     bar->addWidget(zoomOut);
     bar->addWidget(zoomIn);
     layout->addLayout(bar);
@@ -135,6 +144,8 @@ TimelineEditor::TimelineEditor(ProjectController* controller, QWidget* parent)
         m_view->setSnapEnabled(on);
         QSettings().setValue(QStringLiteral("timelineSnap"), on);
     });
+    connect(foldBtn, &QPushButton::clicked, this, [this] { m_view->setAllCollapsed(true); });
+    connect(unfoldBtn, &QPushButton::clicked, this, [this] { m_view->setAllCollapsed(false); });
     connect(zoomIn, &QPushButton::clicked, this, [this] { m_view->zoomBy(1.5); });
     connect(zoomOut, &QPushButton::clicked, this, [this] { m_view->zoomBy(1.0 / 1.5); });
 
@@ -145,6 +156,7 @@ TimelineEditor::TimelineEditor(ProjectController* controller, QWidget* parent)
     connect(m_view, &TimelineView::addFilesRequested, this, &TimelineEditor::addFiles);
     connect(m_view, &TimelineView::addCueRequested, this, &TimelineEditor::addCue);
     connect(m_view, &TimelineView::filesDropped, this, &TimelineEditor::insertFiles);
+    connect(m_view, &TimelineView::addLayerRequested, this, &TimelineEditor::addLayerTo);
     connect(m_panel, &TimelinePropertyPanel::edited, this, &TimelineEditor::applyEdit);
 
     connect(controller, &ProjectController::projectReset, this, &TimelineEditor::reload);
@@ -161,7 +173,7 @@ TimelineEditor::TimelineEditor(ProjectController* controller, QWidget* parent)
 QString TimelineEditor::sceneId() const
 {
     const Scene* scene = m_controller->editingScene();
-    return scene && scene->kind == SceneKind::Timeline ? QString::fromStdString(scene->id) : QString();
+    return scene ? QString::fromStdString(scene->id) : QString();
 }
 
 std::vector<std::pair<std::string, std::string>> TimelineEditor::regionList() const
@@ -175,17 +187,14 @@ std::vector<std::pair<std::string, std::string>> TimelineEditor::regionList() co
 void TimelineEditor::reload()
 {
     const Scene* scene = m_controller->editingScene();
-    if (!scene || scene->kind != SceneKind::Timeline) {
+    if (!scene) {
         m_stack->setCurrentIndex(0);
         return;
     }
     m_stack->setCurrentIndex(1);
     if (m_view->isDragging())
         return; // 끄는 중에는 화면 유지 (놓을 때 반영됨)
-    std::map<std::string, std::string> names;
-    for (const auto& [id, name] : regionList())
-        names[id] = name;
-    m_view->setTimeline(scene->timeline, names);
+    m_view->setTimeline(scene->timeline, regionList());
     {
         const QSignalBlocker blocker(m_endAction);
         m_endAction->setCurrentIndex(std::max(0, m_endAction->findData(int(scene->timeline.endAction))));
@@ -208,16 +217,39 @@ void TimelineEditor::updatePanel()
 
 void TimelineEditor::addLayer()
 {
+    // 선택한 레이어의 영역 그룹, 선택이 없으면 '영역' 탭에서 선택한 영역
+    const int selected = m_view->selectedLayer();
+    std::string regionId = selected >= 0 ? m_view->groupRegionOf(selected)
+                                         : m_controller->selectedRegionId().toStdString();
+    if (selected < 0 && !m_controller->project().findRegion(regionId))
+        regionId = m_controller->project().regions.empty() ? std::string() : m_controller->project().regions.front().id;
+    addLayerTo(QString::fromStdString(regionId));
+}
+
+void TimelineEditor::addLayerTo(const QString& regionIdText)
+{
     Timeline tl = m_view->timeline();
+    const std::string regionId = regionIdText.toStdString();
+    const Region* region = m_controller->project().findRegion(regionId);
+    // 같은 그룹의 레이어 수
+    int count = 0;
+    int insertAt = static_cast<int>(tl.layers.size());
+    for (int i = 0; i < static_cast<int>(tl.layers.size()); ++i) {
+        const TimelineLayer& l = tl.layers[static_cast<std::size_t>(i)];
+        const bool same = region ? l.regionId == regionId : !m_controller->project().findRegion(l.regionId);
+        if (same) {
+            ++count;
+            insertAt = i + 1; // 그룹 맨 아래(화면 뒤) 다음
+        }
+    }
     TimelineLayer layer;
     layer.id = generateId();
-    layer.name = "레이어 " + std::to_string(tl.layers.size() + 1);
-    layer.regionId = m_controller->selectedRegionId().toStdString();
-    if (!m_controller->project().findRegion(layer.regionId) && !m_controller->project().regions.empty())
-        layer.regionId = m_controller->project().regions.front().id;
-    tl.layers.insert(tl.layers.begin(), layer); // 새 레이어는 맨 위(화면 앞)
+    layer.regionId = region ? regionId : std::string();
+    layer.name = region ? (count == 0 ? region->name : region->name + " " + std::to_string(count + 1))
+                        : "소리 " + std::to_string(count + 1);
+    tl.layers.insert(tl.layers.begin() + insertAt, layer);
     applyEdit(tl);
-    m_view->selectLayer(0);
+    m_view->selectLayer(insertAt);
 }
 
 void TimelineEditor::removeLayer()
@@ -240,10 +272,16 @@ void TimelineEditor::removeLayer()
 
 void TimelineEditor::moveLayer(int delta)
 {
+    // 같은 영역 그룹 안에서만 순서 변경
     const int index = m_view->selectedLayer();
     Timeline tl = m_view->timeline();
-    const int target = index + delta;
-    if (index < 0 || target < 0 || target >= static_cast<int>(tl.layers.size()))
+    if (index < 0 || index >= static_cast<int>(tl.layers.size()))
+        return;
+    const std::string group = m_view->groupRegionOf(index);
+    int target = index + delta;
+    while (target >= 0 && target < static_cast<int>(tl.layers.size()) && m_view->groupRegionOf(target) != group)
+        target += delta;
+    if (target < 0 || target >= static_cast<int>(tl.layers.size()))
         return;
     std::swap(tl.layers[static_cast<std::size_t>(index)], tl.layers[static_cast<std::size_t>(target)]);
     applyEdit(tl);
@@ -262,18 +300,22 @@ void TimelineEditor::addFiles(int layer, double time)
     insertFiles(layer, time, files);
 }
 
-void TimelineEditor::insertFiles(int layer, double time, const QStringList& paths)
+void TimelineEditor::insertFiles(int layer, double time, const QStringList& paths, const QString& regionId)
 {
-    Timeline tl = m_view->timeline();
-    if (tl.layers.empty()) {
-        TimelineLayer l;
-        l.id = generateId();
-        l.name = "레이어 1";
-        l.regionId = m_controller->project().regions.empty() ? std::string() : m_controller->project().regions.front().id;
-        tl.layers.push_back(l);
+    if (layer < 0 || layer >= static_cast<int>(m_view->timeline().layers.size())) {
+        // 레이어가 없음: 지정 영역(없으면 선택한 영역)에 새 레이어
+        QString target = regionId;
+        if (target.isEmpty() && !m_controller->project().findRegion(m_controller->selectedRegionId().toStdString()) &&
+            !m_controller->project().regions.empty())
+            target = QString::fromStdString(m_controller->project().regions.front().id);
+        else if (target.isEmpty())
+            target = m_controller->selectedRegionId();
+        addLayerTo(target);
+        layer = m_view->selectedLayer();
+        if (layer < 0)
+            return;
     }
-    if (layer < 0 || layer >= static_cast<int>(tl.layers.size()))
-        layer = 0;
+    Timeline tl = m_view->timeline();
     if (tl.layers[static_cast<std::size_t>(layer)].locked) {
         QMessageBox::information(this, QStringLiteral("타임라인"), QStringLiteral("잠긴 레이어에는 추가할 수 없습니다."));
         return;
@@ -326,7 +368,7 @@ void TimelineEditor::onSeek(double seconds)
         emit seekRequested(seconds);
     else
         m_time->setText(QString::fromStdString(formatTimeText(seconds)) + QStringLiteral(" / ") +
-                        QString::fromStdString(formatTimeText(m_view->timeline().length())));
+                        lengthText(m_view->timeline()));
 }
 
 void TimelineEditor::onPlayToggle()
@@ -344,7 +386,7 @@ void TimelineEditor::setPlaybackStatus(const TimelineStatus& status, bool playin
     if (m_playingThis && !m_view->isDragging())
         m_view->setPlayhead(status.time);
     QString text = QString::fromStdString(formatTimeText(m_playingThis ? status.time : m_view->playhead())) +
-                   QStringLiteral(" / ") + QString::fromStdString(formatTimeText(m_view->timeline().length()));
+                   QStringLiteral(" / ") + lengthText(m_view->timeline());
     if (m_playingThis && !status.waitingCue.empty())
         text += QStringLiteral("  ⏸ 큐 '%1' 대기").arg(QString::fromStdString(status.waitingCue));
     else if (m_playingThis && status.finished)
