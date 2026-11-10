@@ -191,11 +191,10 @@ protected:
 
         // 자석: Alt를 누르고 있으면 일시 해제
         const bool snap = m_view->snapEnabled() && !(event->modifiers() & Qt::AltModifier);
-        std::vector<double> xs;
-        std::vector<double> ys;
+        std::vector<SnapLines> lines;
         if (snap)
-            m_view->snapTargets(m_id, xs, ys);
-        const SnapResult result = snapRect(r, move, m_edges, xs, ys, snap ? m_view->snapThreshold() : 0.0);
+            lines = m_view->snapTargets(m_id);
+        const SnapResult result = snapRect(r, move, m_edges, lines, snap ? m_view->snapThreshold() : 0.0);
         setGeometry(result.rect);
         m_view->showGuides(result.snappedX, result.guideX, result.snappedY, result.guideY);
         event->accept();
@@ -386,24 +385,26 @@ void CanvasView::regionGeometryFinished(const QString& id, const RectI& rect)
     m_controller->updateRegion(updated);
 }
 
-void CanvasView::snapTargets(const QString& excludeId, std::vector<double>& xs, std::vector<double>& ys) const
+std::vector<SnapLines> CanvasView::snapTargets(const QString& excludeId) const
 {
     const Project& p = m_controller->project();
+    std::vector<SnapLines> groups(2);
     // 테두리와 가운데선
-    auto add = [&](const RectI& r) {
-        xs.push_back(r.x);
-        xs.push_back(r.x + r.w / 2.0);
-        xs.push_back(r.right());
-        ys.push_back(r.y);
-        ys.push_back(r.y + r.h / 2.0);
-        ys.push_back(r.bottom());
+    auto add = [](SnapLines& g, const RectI& r) {
+        g.xs.push_back(r.x);
+        g.xs.push_back(r.x + r.w / 2.0);
+        g.xs.push_back(r.right());
+        g.ys.push_back(r.y);
+        g.ys.push_back(r.y + r.h / 2.0);
+        g.ys.push_back(r.bottom());
     };
-    add(RectI{0, 0, p.canvas.width, p.canvas.height});
+    add(groups[0], RectI{0, 0, p.canvas.width, p.canvas.height}); // 캔버스 우선
     for (const OutputConfig& o : p.outputs)
-        add(o.canvasRect);
+        add(groups[1], o.canvasRect);
     for (const Region& r : p.regions)
         if (QString::fromStdString(r.id) != excludeId)
-            add(r.rect);
+            add(groups[1], r.rect);
+    return groups;
 }
 
 double CanvasView::snapThreshold() const

@@ -7,6 +7,7 @@
 //  - 방향키: 1px 이동 (Shift: 10px), Ctrl+방향키: 크기 변경
 
 #include "core/Geometry.h"
+#include "core/Snap.h"
 
 #include <QGraphicsView>
 #include <QHash>
@@ -32,7 +33,8 @@ public:
     // RegionItem에서 호출
     void regionPressed(const QString& id);
     void regionGeometryFinished(const QString& id, const RectI& rect);
-    void snapTargets(const QString& excludeId, std::vector<double>& xs, std::vector<double>& ys) const;
+    // 자석 기준선: [0] 캔버스 테두리/가운데 (우선), [1] 출력과 다른 영역
+    std::vector<SnapLines> snapTargets(const QString& excludeId) const;
     double snapThreshold() const;   // 화면 8px을 캔버스 픽셀로 환산
     void showGuides(bool showX, double x, bool showY, double y);
     void hideGuides();

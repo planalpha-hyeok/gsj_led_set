@@ -192,6 +192,41 @@ static void testSnap()
     // 크기가 0 이하로 뒤집히지 않음
     r = snapRect(RectF{100, 100, -20, -5}, false, SnapRight | SnapBottom, {}, {}, 8);
     CHECK(r.rect.w == 1 && r.rect.h == 1 && r.rect.x == 100 && r.rect.y == 100);
+
+    // 우선순위: 다른 영역 테두리(2)가 더 가까워도 캔버스 테두리(0)에 붙음
+    {
+        std::vector<SnapLines> groups(2);
+        groups[0].xs = {0, 960, 1920};
+        groups[0].ys = {0, 540, 1080};
+        groups[1].xs = {2};
+        groups[1].ys = {2};
+        r = snapRect(RectF{3, 4, 300, 200}, true, 0, groups, 8);
+        CHECK(r.rect == (RectI{0, 0, 300, 200}));
+        CHECK(near(r.guideX, 0) && near(r.guideY, 0));
+        // 캔버스 기준선이 범위 밖이면 다음 그룹 사용
+        groups[1].xs = {500};
+        r = snapRect(RectF{497, 300, 100, 100}, true, 0, groups, 8);
+        CHECK(r.rect.x == 500 && r.snappedX && !r.snappedY);
+        // 크기 변경도 같은 우선순위
+        groups[1].xs = {1918};
+        r = snapRect(RectF{100, 100, 1817, 50}, false, SnapRight, groups, 8);
+        CHECK(r.rect.right() == 1920);
+    }
+
+    // 작은 영역: 붙으면 너비가 1px 미만이 되는 경우 붙이지 않음
+    {
+        const std::vector<double> lx{100};
+        // 오른쪽 테두리(103)를 끄는 중, 기준선 100에 붙으면 너비 0 -> 붙이지 않음
+        r = snapRect(RectF{101, 0, 2, 10}, false, SnapRight, lx, {}, 8);
+        CHECK(!r.snappedX && r.rect.x == 101 && r.rect.w == 2);
+        // 왼쪽 테두리도 같음
+        const std::vector<double> rx{110};
+        r = snapRect(RectF{105, 0, 3, 10}, false, SnapLeft, rx, {}, 8);
+        CHECK(!r.snappedX && r.rect.x == 105 && r.rect.w == 3);
+        // 붙어도 1px 이상 남으면 붙음
+        r = snapRect(RectF{95, 0, 3, 10}, false, SnapRight, lx, {}, 8);
+        CHECK(r.snappedX && r.rect.x == 95 && r.rect.right() == 100);
+    }
 }
 
 int main()

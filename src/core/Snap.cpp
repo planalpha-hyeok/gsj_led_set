@@ -28,10 +28,49 @@ int roundInt(double v)
     return static_cast<int>(std::lround(v));
 }
 
+// 이동: 앞/가운데/뒤 중 기준선에 가장 가까운 것에 맞춰 전체를 옮길 거리
+bool moveDelta(double lo, double hi, const std::vector<double>& lines, double threshold, double& delta,
+               double& guide)
+{
+    const double cand[3] = {lo, (lo + hi) / 2.0, hi};
+    bool found = false;
+    double bestAbs = threshold + 1.0;
+    for (double v : cand) {
+        double d = 0.0;
+        if (nearest(v, lines, threshold, d) && std::fabs(d) < bestAbs) {
+            bestAbs = std::fabs(d);
+            delta = d;
+            guide = v + d;
+            found = true;
+        }
+    }
+    return found;
+}
+
+// 크기 변경: 움직이는 테두리 1개를 붙임 (붙인 뒤 길이가 1px 미만이면 붙이지 않음)
+bool edgeSnap(double& lo, double& hi, bool moveLo, bool moveHi, const std::vector<double>& lines,
+              double threshold, double& guide)
+{
+    double d = 0.0;
+    if (moveLo && nearest(lo, lines, threshold, d)) {
+        if (roundInt(hi) - roundInt(lo + d) >= 1) {
+            lo += d;
+            guide = lo;
+            return true;
+        }
+    } else if (moveHi && nearest(hi, lines, threshold, d)) {
+        if (roundInt(hi + d) - roundInt(lo) >= 1) {
+            hi += d;
+            guide = hi;
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
 
-SnapResult snapRect(const RectF& input, bool move, int edges, const std::vector<double>& xs,
-                    const std::vector<double>& ys, double threshold)
+SnapResult snapRect(const RectF& input, bool move, int edges, const std::vector<SnapLines>& groups, double threshold)
 {
     SnapResult out;
     double left = input.x;
@@ -40,59 +79,33 @@ SnapResult snapRect(const RectF& input, bool move, int edges, const std::vector<
     double bottom = input.y + input.h;
 
     if (threshold > 0.0) {
-        if (move) {
-            // 왼쪽/가운데/오른쪽 중 기준선에 가장 가까운 것에 맞춰 전체 이동
-            const double xsCand[3] = {left, (left + right) / 2.0, right};
-            double bestX = 0.0;
-            double bestXAbs = threshold + 1.0;
-            for (double v : xsCand) {
+        // 가로/세로 각각 우선순위가 높은 그룹부터 시도
+        for (const SnapLines& g : groups) {
+            if (out.snappedX)
+                break;
+            if (move) {
                 double d = 0.0;
-                if (nearest(v, xs, threshold, d) && std::fabs(d) < bestXAbs) {
-                    bestXAbs = std::fabs(d);
-                    bestX = d;
-                    out.guideX = v + d;
+                if (moveDelta(left, right, g.xs, threshold, d, out.guideX)) {
+                    left += d;
+                    right += d;
                     out.snappedX = true;
                 }
+            } else {
+                out.snappedX = edgeSnap(left, right, edges & SnapLeft, edges & SnapRight, g.xs, threshold, out.guideX);
             }
-            if (out.snappedX) {
-                left += bestX;
-                right += bestX;
-            }
-            const double ysCand[3] = {top, (top + bottom) / 2.0, bottom};
-            double bestY = 0.0;
-            double bestYAbs = threshold + 1.0;
-            for (double v : ysCand) {
+        }
+        for (const SnapLines& g : groups) {
+            if (out.snappedY)
+                break;
+            if (move) {
                 double d = 0.0;
-                if (nearest(v, ys, threshold, d) && std::fabs(d) < bestYAbs) {
-                    bestYAbs = std::fabs(d);
-                    bestY = d;
-                    out.guideY = v + d;
+                if (moveDelta(top, bottom, g.ys, threshold, d, out.guideY)) {
+                    top += d;
+                    bottom += d;
                     out.snappedY = true;
                 }
-            }
-            if (out.snappedY) {
-                top += bestY;
-                bottom += bestY;
-            }
-        } else {
-            double d = 0.0;
-            if ((edges & SnapLeft) && nearest(left, xs, threshold, d)) {
-                left += d;
-                out.snappedX = true;
-                out.guideX = left;
-            } else if ((edges & SnapRight) && nearest(right, xs, threshold, d)) {
-                right += d;
-                out.snappedX = true;
-                out.guideX = right;
-            }
-            if ((edges & SnapTop) && nearest(top, ys, threshold, d)) {
-                top += d;
-                out.snappedY = true;
-                out.guideY = top;
-            } else if ((edges & SnapBottom) && nearest(bottom, ys, threshold, d)) {
-                bottom += d;
-                out.snappedY = true;
-                out.guideY = bottom;
+            } else {
+                out.snappedY = edgeSnap(top, bottom, edges & SnapTop, edges & SnapBottom, g.ys, threshold, out.guideY);
             }
         }
     }
@@ -122,6 +135,12 @@ SnapResult snapRect(const RectF& input, bool move, int edges, const std::vector<
         out.rect = RectI{l, t, r - l, b - t};
     }
     return out;
+}
+
+SnapResult snapRect(const RectF& rect, bool move, int edges, const std::vector<double>& xs,
+                    const std::vector<double>& ys, double threshold)
+{
+    return snapRect(rect, move, edges, std::vector<SnapLines>{SnapLines{xs, ys}}, threshold);
 }
 
 } // namespace led
