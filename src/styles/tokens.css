@@ -1,0 +1,35 @@
+/* 디자인 토큰: 색상·글꼴·간격 */
+:root {
+  --bg: #090b0e;
+  --bg-grid: #0f1216;
+  --panel: #111419;
+  --panel-2: #161a20;
+  --panel-3: #1c2129;
+  --line: #232933;
+  --line-strong: #2f3744;
+  --text: #e8ecf2;
+  --text-2: #b4bccb;
+  --muted: #7b8597;
+
+  --accent: #35e0b8;
+  --accent-2: #2bb796;
+  --accent-soft: rgba(53, 224, 184, 0.12);
+  --accent-glow: 0 0 0 1px rgba(53, 224, 184, 0.35), 0 0 18px rgba(53, 224, 184, 0.18);
+
+  --ok: #35e0b8;
+  --warn: #ffb547;
+  --warn-soft: rgba(255, 181, 71, 0.12);
+  --err: #ff5d6c;
+  --err-soft: rgba(255, 93, 108, 0.12);
+  --info: #6aa7ff;
+  --info-soft: rgba(106, 167, 255, 0.12);
+
+  --radius-s: 6px;
+  --radius: 10px;
+  --radius-l: 14px;
+
+  --font-sans: 'Pretendard Variable', Pretendard, -apple-system, 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Consolas, monospace;
+
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
