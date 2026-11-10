@@ -43,6 +43,8 @@ export const colorlightControllers: ControllerSpec[] = [
 ];
 
 export const colorlightCards: ReceivingCardSpec[] = [
+  { id: 'cl-k5plus', brand: 'colorlight', model: 'K5+', series: 'K', maxPixels: 512 * 384,
+    loadText: '512×384', source: 'reseller', note: '정밀 피치용. 공식 사양서 미확인' },
   { id: 'cl-5a75b', brand: 'colorlight', model: '5A-75B', series: '5A', maxPixels: 192 * 1024,
     loadText: '192×1024 (PWM) / 128×1024 (일반 IC)', source: 'reseller' },
   { id: 'cl-5a75e', brand: 'colorlight', model: '5A-75E', series: '5A', maxPixels: 128 * 512,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { defaultProject } from '../store/defaults';
+import { normalizeProject } from '../store/persistence';
 import { appendCell, findOwner, pruneRuns, removeLast, truncateAfter } from '../store/wiringOps';
 import type { Cell, ControllerSpec, DataRun, Project } from '../types';
 import { analyze } from './analyze';
@@ -40,8 +41,24 @@ describe('기본 프로젝트', () => {
     expect(a.issues.filter((i) => i.severity === 'error')).toEqual([]);
     // 6 × 88,752 = 532,512 / 655,360 = 81.3%
     expect(a.data!.ports[0].load).toBeCloseTo(532512 / 655360, 6);
-    // 260W / (220 × 0.95) = 1.244A × 9 = 11.2A (회로 한도 16A)
-    expect(a.circuits.circuits[0].currentA).toBeCloseTo((260 / 209) * 9, 6);
+    // SMPS 200W × 1 ÷ 0.85 = 235.3W, ÷ (220 × 0.95) = 1.126A × 9 = 10.1A (회로 한도 16A)
+    expect(a.power.cabinetW).toBeCloseTo(200 / 0.85, 6);
+    expect(a.circuits.circuits[0].currentA).toBeCloseTo((200 / 0.85 / 209) * 9, 6);
+    // 회로당 최대 floor(16 / 1.126) = 14개
+    expect(a.circuits.cabinetsPerCircuit).toBe(14);
+  });
+});
+
+describe('이전 버전 파일 변환', () => {
+  it('최대 전력 W → SMPS 같은 값 × 1개, 효율 100% (계산 결과 유지)', () => {
+    const old = { ...defaultProject(), cabinet: { ...defaultProject().cabinet, powerMaxW: 300, powerAvgW: 100 } } as unknown as Partial<Project>;
+    delete (old.cabinet as Partial<Project['cabinet']>).smpsW;
+    const p = normalizeProject(old);
+    expect(p.cabinet.smpsW).toBe(300);
+    expect(p.cabinet.smpsCount).toBe(1);
+    expect(p.cabinet.smpsEfficiency).toBe(1);
+    expect('powerMaxW' in p.cabinet).toBe(false);
+    expect(analyze(p).power.cabinetW).toBe(300);
   });
 });
 

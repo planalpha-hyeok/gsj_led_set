@@ -53,10 +53,6 @@ export function buildCircuits(p: Project, cabinetW: number, cabinetA: number): C
     };
   });
 
-  if (pw.basis === 'avg') {
-    issues.push({ severity: 'warning', message: '평균 전력 기준으로 계산 중 → 전체 흰색 화면 등 최대 부하 시 차단기가 떨어질 수 있음' });
-  }
-
   const check = checkGroups(p, circuits.map((c) => ({ name: c.label, cells: c.cells })), '전원');
   issues.push(...check.issues);
 

@@ -1,13 +1,13 @@
 import type { Project } from '../types';
 
 export interface PowerTotals {
-  /** 계산 기준 캐비닛 1개 전력 (W) */
+  /** 캐비닛 1개 SMPS 정격 출력 합계 (W) */
+  cabinetSmpsW: number;
+  /** 캐비닛 1개 최대 입력 전력 (W) = SMPS 정격 × 개수 ÷ 효율 */
   cabinetW: number;
   /** 캐비닛 1개 전류 (A, 상전압 기준) */
   cabinetA: number;
-  totalMaxW: number;
-  totalAvgW: number;
-  /** 계산 기준 총 전력 (W) */
+  /** 최대 입력 전력 합계 (W) */
   totalW: number;
   /** 피상전력 (kVA) */
   totalKVA: number;
@@ -17,18 +17,22 @@ export interface PowerTotals {
   threePhaseLineA: number;
 }
 
-/** 전력·전류 계산 */
+/**
+ * 전력·전류 계산 (항상 최대 전력 기준)
+ * 캐비닛 입력 전력 = SMPS 정격 출력 × 개수 ÷ 효율
+ */
 export function computePower(p: Project): PowerTotals {
   const { cabinet: cab, power: pw } = p;
   const n = p.cols * p.rows;
-  const cabinetW = pw.basis === 'max' ? cab.powerMaxW : cab.powerAvgW;
+  const cabinetSmpsW = cab.smpsW * cab.smpsCount;
+  const eff = cab.smpsEfficiency > 0 ? cab.smpsEfficiency : 1;
+  const cabinetW = cabinetSmpsW / eff;
   const pf = pw.powerFactor > 0 ? pw.powerFactor : 1;
   const totalW = cabinetW * n;
   return {
+    cabinetSmpsW,
     cabinetW,
     cabinetA: cabinetW / (pw.phaseVoltage * pf),
-    totalMaxW: cab.powerMaxW * n,
-    totalAvgW: cab.powerAvgW * n,
     totalW,
     totalKVA: totalW / pf / 1000,
     singlePhaseA: totalW / (pw.phaseVoltage * pf),

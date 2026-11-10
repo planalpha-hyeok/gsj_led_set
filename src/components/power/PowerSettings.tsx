@@ -21,8 +21,6 @@ export function PowerSettings() {
           onChange={(v) => updatePower({ derate: v / 100 })} />
         <NumberField label="케이블 허용 전류" value={pw.chainLimitA} min={1} unit="A" onChange={(v) => updatePower({ chainLimitA: v })} />
       </div>
-      <Segmented label="계산 기준" value={pw.basis} onChange={(v) => updatePower({ basis: v })}
-        options={[{ value: 'max', label: '최대 전력 (권장)' }, { value: 'avg', label: '평균 전력' }]} />
       <p className="hint">케이블 허용 전류: 캐비닛 간 전원 연결 케이블·커넥터(예: powerCON) 정격 중 낮은 값을 입력하세요.</p>
     </Section>
   );

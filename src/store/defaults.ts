@@ -25,7 +25,7 @@ export function defaultProject(): Project {
     cols: 5,
     rows: 3,
     controllerId: 'cl-x4m',
-    receivingCardId: 'cl-e120',
+    receivingCardId: 'cl-k5plus',
     bitDepth: 8,
     frameRate: 60,
     power: {
@@ -36,7 +36,6 @@ export function defaultProject(): Project {
       breakerA: 20,
       derate: 0.8,
       chainLimitA: 16,
-      basis: 'max',
     },
     dataRuns: [newDataRun(0, 1)],
     powerRuns: [newPowerRun('L1')],

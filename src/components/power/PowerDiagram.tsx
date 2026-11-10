@@ -28,7 +28,7 @@ export function PowerDiagram({ project: p, analysis: a, theme, activeIndex }: Pr
   const items: LegendItem[] = circuits.map((ci) => ({
     color: colorOf(ci.index),
     label: nameOf(ci.index),
-    detail: `${ci.cells.length}개 · ${ci.watts.toLocaleString()}W · ${ci.currentA.toFixed(1)}A · ${(ci.load * 100).toFixed(0)}%`,
+    detail: `${ci.cells.length}개 · ${Math.round(ci.watts).toLocaleString()}W · ${ci.currentA.toFixed(1)}A · ${(ci.load * 100).toFixed(0)}%`,
     danger: ci.load > 1,
   }));
 

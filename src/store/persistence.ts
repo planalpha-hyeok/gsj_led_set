@@ -65,10 +65,12 @@ export function normalizeProject(raw: Partial<Project>): Project {
   const d = defaultProject();
   const power = { ...d.power, ...raw.power };
   delete (power as { route?: unknown }).route;
+  delete (power as { basis?: unknown }).basis;
+  const cabinet = migrateCabinet({ ...d.cabinet, ...raw.cabinet });
   const p: Project = {
     ...d,
     ...raw,
-    cabinet: { ...d.cabinet, ...raw.cabinet },
+    cabinet,
     power,
     dataRuns: Array.isArray(raw.dataRuns) ? raw.dataRuns : d.dataRuns,
     powerRuns: Array.isArray(raw.powerRuns) ? raw.powerRuns : d.powerRuns,
@@ -78,4 +80,20 @@ export function normalizeProject(raw: Partial<Project>): Project {
   };
   delete (p as { mapping?: unknown }).mapping;
   return p;
+}
+
+/**
+ * 이전 버전 캐비닛(최대/평균 전력 W 입력)을 SMPS 방식으로 변환
+ * 계산 결과가 바뀌지 않도록 SMPS = 이전 최대 전력 × 1개, 효율 100%로 옮긴다.
+ */
+function migrateCabinet(cab: Project['cabinet'] & { powerMaxW?: number; powerAvgW?: number }): Project['cabinet'] {
+  const out = { ...cab };
+  if (typeof cab.powerMaxW === 'number') {
+    out.smpsW = cab.powerMaxW;
+    out.smpsCount = 1;
+    out.smpsEfficiency = 1;
+  }
+  delete (out as { powerMaxW?: number }).powerMaxW;
+  delete (out as { powerAvgW?: number }).powerAvgW;
+  return out;
 }

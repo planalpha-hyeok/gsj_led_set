@@ -113,6 +113,16 @@
   background-repeat: no-repeat;
 }
 .field-input select option, .field-input select optgroup { background: var(--panel-2); color: var(--text); }
+.field-readout {
+  display: flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--radius-s);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
 .field-unit { padding-right: 10px; color: var(--muted); font-size: 11.5px; font-family: var(--font-mono); }
 
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

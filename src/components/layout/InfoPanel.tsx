@@ -43,7 +43,7 @@ export function InfoPanel() {
         <Stat label="수신카드" value={String(a.cardResult?.totalCards ?? 0)} unit="장" />
         <Stat label="컨트롤러" value={String(a.data?.units.length ?? 0)} unit="대" sub={a.controller?.model} />
         <Stat label="사용 포트" value={String(ports.length)} unit="개" sub={a.data ? `포트당 최대 ${a.data.cabinetsPerPort}개` : undefined} />
-        <Stat label="최대 전력" value={(a.power.totalMaxW / 1000).toFixed(2)} unit="kW" sub={`평균 ${(a.power.totalAvgW / 1000).toFixed(2)} kW`} />
+        <Stat label="최대 전력" value={(a.power.totalW / 1000).toFixed(2)} unit="kW" sub={`캐비닛당 ${a.power.cabinetW.toFixed(0)} W`} />
         <Stat label={three ? '선전류(평형)' : '총 전류'} value={(three ? a.power.threePhaseLineA : a.power.singlePhaseA).toFixed(1)} unit="A"
           sub={`회로 ${a.circuits.circuits.length}개`} />
       </div>

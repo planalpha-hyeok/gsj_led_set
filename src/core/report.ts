@@ -38,9 +38,9 @@ export function buildReport(p: Project, a: Analysis): Report {
   ];
 
   const power: ReportRow[] = [
-    { label: '최대 전력', value: `${(pw.totalMaxW / 1000).toFixed(2)} kW` },
-    { label: '평균 전력', value: `${(pw.totalAvgW / 1000).toFixed(2)} kW` },
-    { label: '계산 기준', value: p.power.basis === 'max' ? '최대 전력' : '평균 전력', note: `역률 ${p.power.powerFactor}` },
+    { label: 'SMPS 구성', value: `${p.cabinet.smpsW}W × ${p.cabinet.smpsCount}개 / 캐비닛`, note: `효율 ${Math.round(p.cabinet.smpsEfficiency * 100)}%` },
+    { label: '캐비닛 입력 전력', value: `${pw.cabinetW.toFixed(1)} W`, note: `${pw.cabinetSmpsW}W ÷ ${p.cabinet.smpsEfficiency}` },
+    { label: '최대 전력', value: `${(pw.totalW / 1000).toFixed(2)} kW`, note: `역률 ${p.power.powerFactor}` },
     { label: '피상전력', value: `${pw.totalKVA.toFixed(2)} kVA` },
     three
       ? { label: '상별 전류', value: a.phases.phases.map((x) => `${x.phase} ${x.currentA.toFixed(1)}A`).join(' / '), note: `불평형 ${a.phases.imbalancePct.toFixed(1)}%` }
@@ -75,7 +75,7 @@ export function buildReport(p: Project, a: Analysis): Report {
     c.label,
     three ? c.phase : '-',
     String(c.cells.length),
-    n(c.watts),
+    n(Math.round(c.watts)),
     c.currentA.toFixed(2),
     `${(c.load * 100).toFixed(1)}%`,
   ]);

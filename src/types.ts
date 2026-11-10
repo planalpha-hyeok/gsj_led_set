@@ -55,13 +55,16 @@ export interface CabinetSpec {
   heightPx: number;
   widthMm: number;
   heightMm: number;
-  powerMaxW: number;
-  powerAvgW: number;
+  /** SMPS 1개 정격 출력 (W) */
+  smpsW: number;
+  /** 캐비닛당 SMPS 개수 */
+  smpsCount: number;
+  /** SMPS 효율 (0~1). 입력 전력 = 정격 × 개수 ÷ 효율 */
+  smpsEfficiency: number;
   weightKg: number;
 }
 
 export type PowerSystem = 'single' | 'three';
-export type PowerBasis = 'max' | 'avg';
 
 export interface PowerSettings {
   system: PowerSystem;
@@ -75,7 +78,6 @@ export interface PowerSettings {
   derate: number;
   /** 전원 케이블/커넥터 1라인 허용 전류 */
   chainLimitA: number;
-  basis: PowerBasis;
 }
 
 export type Phase = 'L1' | 'L2' | 'L3';
