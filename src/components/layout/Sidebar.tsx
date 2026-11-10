@@ -1,5 +1,4 @@
 import { DeviceSettings } from '../devices/DeviceSettings';
-import { MappingSettings } from '../mapping/MappingSettings';
 import { PowerSettings } from '../power/PowerSettings';
 import { ScreenSettings } from '../screen/ScreenSettings';
 
@@ -9,7 +8,6 @@ export function Sidebar() {
     <aside className="sidebar">
       <ScreenSettings />
       <DeviceSettings />
-      <MappingSettings />
       <PowerSettings />
     </aside>
   );

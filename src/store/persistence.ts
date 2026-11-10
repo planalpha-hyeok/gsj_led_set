@@ -57,17 +57,25 @@ export function loadInitialProject(): Project {
   return defaultProject();
 }
 
-/** 불러온 데이터에 빠진 항목이 있으면 기본값으로 채움 (이전 버전 파일 호환) */
+/**
+ * 불러온 데이터에 빠진 항목이 있으면 기본값으로 채움 (이전 버전 파일 호환)
+ * 버전 1(자동 경로) 파일은 배선 정보가 없으므로 빈 포트/회로 1개로 시작
+ */
 export function normalizeProject(raw: Partial<Project>): Project {
   const d = defaultProject();
-  return {
+  const power = { ...d.power, ...raw.power };
+  delete (power as { route?: unknown }).route;
+  const p: Project = {
     ...d,
     ...raw,
     cabinet: { ...d.cabinet, ...raw.cabinet },
-    mapping: { ...d.mapping, ...raw.mapping },
-    power: { ...d.power, ...raw.power, route: { ...d.power.route, ...raw.power?.route } },
+    power,
+    dataRuns: Array.isArray(raw.dataRuns) ? raw.dataRuns : d.dataRuns,
+    powerRuns: Array.isArray(raw.powerRuns) ? raw.powerRuns : d.powerRuns,
     customControllers: raw.customControllers ?? [],
     customCards: raw.customCards ?? [],
-    version: 1,
+    version: 2,
   };
+  delete (p as { mapping?: unknown }).mapping;
+  return p;
 }

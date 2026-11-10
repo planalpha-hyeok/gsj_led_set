@@ -5,6 +5,9 @@ import type { CabinetSpec } from '../types';
  * 전력·무게는 제조사마다 다르므로 실제 캐비닛 사양서 값으로 반드시 수정해서 사용
  */
 export const cabinetTemplates: CabinetSpec[] = [
+  // 320×160 모듈(P1.86, 172×86px) 가로 2 × 세로 3 = 6개
+  { id: 'tpl-640480-p186', name: '640×480 P1.86 (모듈 6개)', widthPx: 344, heightPx: 258, widthMm: 640, heightMm: 480,
+    powerMaxW: 260, powerAvgW: 90, weightKg: 8 },
   { id: 'tpl-500-p26', name: '500×500 P2.6', widthPx: 192, heightPx: 192, widthMm: 500, heightMm: 500,
     powerMaxW: 200, powerAvgW: 70, weightKg: 7.5 },
   { id: 'tpl-500-p29', name: '500×500 P2.9', widthPx: 168, heightPx: 168, widthMm: 500, heightMm: 500,

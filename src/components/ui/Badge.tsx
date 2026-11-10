@@ -16,3 +16,13 @@ export function LoadBar({ value }: { value: number }) {
     </span>
   );
 }
+
+/** 진행률 막대 (0~1, 완료 시 강조색) */
+export function ProgressBar({ value }: { value: number }) {
+  const pct = Math.max(0, Math.min(100, value * 100));
+  return (
+    <span className="loadbar">
+      <span className={`loadbar-fill ${pct >= 100 ? 'ok' : 'progress'}`} style={{ width: `${pct}%` }} />
+    </span>
+  );
+}

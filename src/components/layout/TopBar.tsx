@@ -8,7 +8,7 @@ import type { TabKind } from './Workspace';
 
 /** 상단 바: 프로젝트 이름, 저장/불러오기, 내보내기 */
 export function TopBar({ tab }: { tab: TabKind }) {
-  const { project, analysis, update, setProject } = useProject();
+  const { project, analysis, update, setProject, undo, redo, canUndo, canRedo } = useProject();
   const [dialog, setDialog] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -43,10 +43,13 @@ export function TopBar({ tab }: { tab: TabKind }) {
         <span className="brand-name">LED Wall Planner</span>
       </div>
 
-      <input className="project-name" value={project.name} onChange={(e) => update({ name: e.target.value })}
+      <input className="project-name" value={project.name} onChange={(e) => update({ name: e.target.value }, 'name')}
         aria-label="프로젝트 이름" spellCheck={false} />
 
       <div className="topbar-actions">
+        <button type="button" className="icon-btn" onClick={undo} disabled={!canUndo} title="실행 취소 (Ctrl+Z)"><Icon name="undo" size={16} /></button>
+        <button type="button" className="icon-btn" onClick={redo} disabled={!canRedo} title="다시 실행 (Ctrl+Y)"><Icon name="redo" size={16} /></button>
+        <span className="divider" />
         <button type="button" className="btn ghost" onClick={() => setDialog(true)}><Icon name="folder" size={15} />프로젝트</button>
         <button type="button" className="btn ghost" onClick={() => exportProjectJson(project)}><Icon name="save" size={15} />파일 저장</button>
         <button type="button" className="btn ghost" onClick={() => fileRef.current?.click()}><Icon name="upload" size={15} />파일 열기</button>

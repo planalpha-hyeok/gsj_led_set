@@ -36,6 +36,7 @@
   cursor: pointer;
 }
 .icon-btn:hover { background: var(--panel-3); color: var(--text); }
+.icon-btn:disabled { opacity: 0.35; cursor: default; background: transparent; }
 .icon-btn.danger:hover { color: var(--err); background: var(--err-soft); }
 
 .link-btn {
@@ -223,6 +224,7 @@
 .loadbar-fill.ok { background: linear-gradient(90deg, var(--accent-2), var(--accent)); }
 .loadbar-fill.warn { background: var(--warn); }
 .loadbar-fill.err { background: var(--err); }
+.loadbar-fill.progress { background: var(--info); }
 
 /* ── 결과 패널 ── */
 .status-pill {
@@ -287,6 +289,8 @@
 /* ── 배선도 확대/이동 ── */
 .zoompan { position: absolute; inset: 0; overflow: hidden; cursor: grab; touch-action: none; }
 .zoompan:active { cursor: grabbing; }
+.zoompan.editable [data-c] { cursor: crosshair; }
+.zoompan text { pointer-events: none; user-select: none; }
 .zoompan-inner { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
 .zoompan-inner svg { display: block; border-radius: 12px; box-shadow: var(--shadow); }
 .zoom-tools {
@@ -339,3 +343,55 @@
 .project-open:hover { background: var(--panel-3); }
 .project-open span { font-size: 11px; color: var(--muted); }
 .tag { font-size: 11px; color: var(--accent); font-weight: 700; padding: 0 6px; }
+
+/* ── 수동 배선 편집 ── */
+.stage-edit { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.stage-canvas { position: relative; flex: 1; min-height: 0; }
+.wiring-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 10px 14px;
+  background: rgba(13, 16, 20, 0.92);
+  border-bottom: 1px solid var(--line);
+}
+.wiring-chips { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 420px; min-width: 0; }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 15px;
+  border: 1px solid var(--line-strong);
+  background: var(--panel-2);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.chip:hover { border-color: #3a4352; color: var(--text); }
+.chip.on { border-color: var(--accent); color: var(--text); box-shadow: 0 0 0 3px var(--accent-soft); }
+.chip.over { border-color: var(--err); }
+.chip-dot { width: 9px; height: 9px; border-radius: 50%; }
+.chip-meta { font-size: 10.5px; color: var(--muted); font-weight: 400; }
+.chip.add { border-style: dashed; color: var(--accent); background: transparent; }
+.chip.add:hover { background: var(--accent-soft); }
+.wiring-active { display: flex; align-items: center; gap: 8px; }
+.mini-field { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); }
+.mini-field select {
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--line-strong);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.mini-field select:focus { outline: none; border-color: var(--accent); }
+.btn.sm { height: 28px; padding: 0 9px; font-size: 12px; }
+.btn.danger:hover { color: var(--err); background: var(--err-soft); }
+.wiring-help { flex-basis: 100%; font-size: 11px; color: var(--muted); }
+.progress-block { display: flex; flex-direction: column; gap: 7px; }

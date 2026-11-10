@@ -8,10 +8,12 @@ interface Props {
   /** 시작점 표시 글자 (예: "P1") */
   startLabel: string;
   labelColor: string;
+  /** 흐리게 표시 (편집 중이 아닌 배선) */
+  dim?: boolean;
 }
 
 /** 케이블 경로: 캐비닛 중심을 잇는 선 + 진행 방향 화살표 + 시작 표시 */
-export function RouteLine({ cells, geom: g, color, startLabel, labelColor }: Props) {
+export function RouteLine({ cells, geom: g, color, startLabel, labelColor, dim }: Props) {
   if (cells.length === 0) return null;
   const pts = cells.map((c) => cellCenter(g, c));
   const sw = Math.max(2, g.cellW * 0.03);
@@ -19,7 +21,7 @@ export function RouteLine({ cells, geom: g, color, startLabel, labelColor }: Pro
   const r = Math.min(g.cellW, g.cellH) * 0.17;
 
   return (
-    <g>
+    <g opacity={dim ? 0.35 : 1} pointerEvents="none">
       <polyline
         points={pts.map((pt) => `${pt.x},${pt.y}`).join(' ')}
         fill="none" stroke={color} strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round" opacity={0.95}
@@ -40,8 +42,8 @@ export function RouteLine({ cells, geom: g, color, startLabel, labelColor }: Pro
       <text x={pts[0].x} y={pts[0].y} fill={labelColor} fontSize={r * 0.9} fontWeight={800}
         textAnchor="middle" dominantBaseline="central">{startLabel}</text>
       {/* 끝점 */}
-      <rect x={pts[pts.length - 1].x - r * 0.45} y={pts[pts.length - 1].y - r * 0.45} width={r * 0.9} height={r * 0.9}
-        fill="none" stroke={color} strokeWidth={sw} />
+      {pts.length > 1 && <rect x={pts[pts.length - 1].x - r * 0.45} y={pts[pts.length - 1].y - r * 0.45} width={r * 0.9} height={r * 0.9}
+        fill="none" stroke={color} strokeWidth={sw} />}
     </g>
   );
 }

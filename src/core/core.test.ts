@@ -1,69 +1,112 @@
 import { describe, expect, it } from 'vitest';
 import { defaultProject } from '../store/defaults';
+import { appendCell, findOwner, pruneRuns, removeLast, truncateAfter } from '../store/wiringOps';
+import type { Cell, ControllerSpec, DataRun, Project } from '../types';
 import { analyze } from './analyze';
+import { nextFreePort } from './dataMapping';
 import { effectivePortCapacity } from './portCapacity';
-import { generateLines, splitIntoGroups } from './routePath';
-import { assignPhases } from './threePhase';
-import type { ControllerSpec } from '../types';
+import { computePhaseLoads, suggestPhase } from './threePhase';
 
-describe('generateLines', () => {
-  it('좌상단 가로 S자', () => {
-    const l = generateLines(3, 2, { start: 'TL', direction: 'horizontal', pattern: 'serpentine' });
-    expect(l).toEqual([
-      [{ c: 0, r: 0 }, { c: 1, r: 0 }, { c: 2, r: 0 }],
-      [{ c: 2, r: 1 }, { c: 1, r: 1 }, { c: 0, r: 1 }],
-    ]);
-  });
-  it('우하단 세로 Z자', () => {
-    const l = generateLines(2, 2, { start: 'BR', direction: 'vertical', pattern: 'zigzag' });
-    expect(l).toEqual([
-      [{ c: 1, r: 1 }, { c: 1, r: 0 }],
-      [{ c: 0, r: 1 }, { c: 0, r: 0 }],
-    ]);
-  });
-});
+const col = (c: number, rows: number): Cell[] => Array.from({ length: rows }, (_, r) => ({ c, r }));
 
-describe('splitIntoGroups', () => {
-  const lines = generateLines(4, 3, { start: 'TL', direction: 'vertical', pattern: 'serpentine' }); // 열 4개, 열마다 3개
-  it('줄 단위: 용량 7 → 2열(6개)씩', () => {
-    const g = splitIntoGroups(lines, 7, 'line');
-    expect(g.map((x) => x.length)).toEqual([6, 6]);
-  });
-  it('채움: 용량 7 → 7, 5', () => {
-    const g = splitIntoGroups(lines, 7, 'fill');
-    expect(g.map((x) => x.length)).toEqual([7, 5]);
-  });
-  it('한 줄이 용량보다 길면 줄마다 자름', () => {
-    const g = splitIntoGroups(lines, 2, 'line');
-    expect(g.map((x) => x.length)).toEqual([2, 1, 2, 1, 2, 1, 2, 1]);
-  });
-});
+/** 기본 프로젝트(640×480 P1.86, 5×3, X4m)에 배선 채우기 */
+function wired(): Project {
+  const p = defaultProject();
+  // 포트당 floor(655,360 / (344×258=88,752)) = 7개 → 열 2개(6개)씩
+  p.dataRuns = [
+    { id: 'a', unit: 0, port: 1, cells: [...col(0, 3), ...col(1, 3).reverse()] },
+    { id: 'b', unit: 0, port: 2, cells: [...col(2, 3), ...col(3, 3).reverse()] },
+    { id: 'c', unit: 0, port: 3, cells: col(4, 3) },
+  ];
+  p.powerRuns = [
+    { id: 'x', phase: 'L1', cells: [...col(0, 3), ...col(1, 3).reverse(), ...col(2, 3)] },
+    { id: 'y', phase: 'L1', cells: [...col(3, 3), ...col(4, 3).reverse()] },
+  ];
+  return p;
+}
 
-describe('effectivePortCapacity', () => {
-  const ctrl = { pixelsPerPort: 650000, maxPixels: 2600000, ports: 4 } as ControllerSpec;
-  it('8bit 60Hz = 650,000', () => expect(effectivePortCapacity(ctrl, 8, 60)).toBe(650000));
-  it('10bit = 50%', () => expect(effectivePortCapacity(ctrl, 10, 60)).toBe(325000));
-  it('120Hz = 50%', () => expect(effectivePortCapacity(ctrl, 8, 120)).toBe(325000));
-});
-
-describe('assignPhases', () => {
-  it('같은 전류 회로 6개 → 상마다 2개, 불평형 0%', () => {
-    const cs = Array.from({ length: 6 }, (_, i) => ({ index: i, cells: [], currentA: 10, watts: 2200, load: 0.8, phase: 'L1' as const }));
-    const r = assignPhases(cs, true);
-    expect(r.phases.map((p) => p.circuits)).toEqual([2, 2, 2]);
-    expect(r.imbalancePct).toBe(0);
-  });
-});
-
-describe('analyze (기본 프로젝트)', () => {
-  it('500×500 P3.9 128×128, 12×6, VX1000', () => {
+describe('기본 프로젝트', () => {
+  it('640×480 P1.86 5×3 = 1720×774, X4m 포트당 최대 7개', () => {
     const a = analyze(defaultProject());
-    // 128×128 = 16,384px → 포트당 floor(650000/16384) = 39개
-    expect(a.data!.cabinetsPerPort).toBe(39);
-    // 세로 6개 열 단위 → 포트당 6열(36개) → 12열 / 6 = 2포트
-    expect(a.data!.ports.length).toBe(2);
-    expect(a.screen.widthPx).toBe(128 * 12);
-    // 200W / (220V × 0.95) = 0.957A, 회로 한도 min(20×0.8, 16) = 16A → 16개
-    expect(a.circuits.cabinetsPerCircuit).toBe(16);
+    expect(a.screen.widthPx).toBe(1720);
+    expect(a.screen.heightPx).toBe(774);
+    expect(a.data!.cabinetsPerPort).toBe(7);
+    expect(a.data!.unassigned).toBe(15);
+  });
+  it('배선 완료 시 미연결 0, 오류 없음', () => {
+    const a = analyze(wired());
+    expect(a.data!.unassigned).toBe(0);
+    expect(a.circuits.unassigned).toBe(0);
+    expect(a.issues.filter((i) => i.severity === 'error')).toEqual([]);
+    // 6 × 88,752 = 532,512 / 655,360 = 81.3%
+    expect(a.data!.ports[0].load).toBeCloseTo(532512 / 655360, 6);
+    // 260W / (220 × 0.95) = 1.244A × 9 = 11.2A (회로 한도 16A)
+    expect(a.circuits.circuits[0].currentA).toBeCloseTo((260 / 209) * 9, 6);
+  });
+});
+
+describe('수동 배선 검사', () => {
+  it('포트 용량 초과', () => {
+    const p = wired();
+    p.dataRuns = [{ id: 'a', unit: 0, port: 1, cells: [...col(0, 3), ...col(1, 3), ...col(2, 2)] }];
+    expect(analyze(p).issues.some((i) => i.severity === 'error' && i.message.includes('포트 용량 초과'))).toBe(true);
+  });
+  it('같은 포트 번호 중복', () => {
+    const p = wired();
+    p.dataRuns[1].port = 1;
+    expect(analyze(p).issues.some((i) => i.message.includes('같은 포트 번호'))).toBe(true);
+  });
+  it('포트 번호가 장비 포트 수보다 큼', () => {
+    const p = wired();
+    p.dataRuns[2].port = 5;
+    expect(analyze(p).issues.some((i) => i.message.includes('포트가 4개뿐'))).toBe(true);
+  });
+  it('붙어 있지 않은 연결 경고', () => {
+    const p = wired();
+    p.dataRuns[2].cells = [{ c: 4, r: 0 }, { c: 4, r: 2 }, { c: 4, r: 1 }];
+    expect(analyze(p).issues.some((i) => i.message.includes('붙어 있지 않음'))).toBe(true);
+  });
+  it('회로 과부하', () => {
+    const p = wired();
+    p.powerRuns = [{ id: 'x', phase: 'L1', cells: [...col(0, 3), ...col(1, 3), ...col(2, 3), ...col(3, 3), ...col(4, 3)] }];
+    expect(analyze(p).issues.some((i) => i.message.includes('회로 과부하'))).toBe(true);
+  });
+});
+
+describe('배선 편집 함수', () => {
+  const runs: DataRun[] = [{ id: 'a', unit: 0, port: 1, cells: [{ c: 0, r: 0 }, { c: 0, r: 1 }] }, { id: 'b', unit: 0, port: 2, cells: [] }];
+  it('추가: 다른 배선에 있는 캐비닛은 추가 안 됨', () => {
+    expect(appendCell(runs, 'b', { c: 0, r: 0 })).toBe(runs);
+    expect(appendCell(runs, 'b', { c: 1, r: 0 })[1].cells).toEqual([{ c: 1, r: 0 }]);
+  });
+  it('마지막 제거 / 잘라내기 / 찾기', () => {
+    expect(removeLast(runs, 'a')[0].cells).toEqual([{ c: 0, r: 0 }]);
+    expect(truncateAfter(runs, 'a', 0)[0].cells).toEqual([{ c: 0, r: 0 }]);
+    expect(findOwner(runs, { c: 0, r: 1 })).toEqual({ run: runs[0], pos: 1 });
+  });
+  it('화면 축소 시 범위 밖 제거', () => {
+    expect(pruneRuns(runs, 1, 1)[0].cells).toEqual([{ c: 0, r: 0 }]);
+  });
+  it('다음 빈 포트', () => {
+    const p = wired();
+    expect(nextFreePort(p, 4)).toEqual({ unit: 0, port: 4 });
+    p.dataRuns.push({ id: 'd', unit: 0, port: 4, cells: [] });
+    expect(nextFreePort(p, 4)).toEqual({ unit: 1, port: 1 });
+  });
+});
+
+describe('포트 용량 / 3상', () => {
+  const ctrl = { pixelsPerPort: 650000, maxPixels: 2600000, ports: 4 } as ControllerSpec;
+  it('8bit 60Hz / 10bit / 120Hz', () => {
+    expect(effectivePortCapacity(ctrl, 8, 60)).toBe(650000);
+    expect(effectivePortCapacity(ctrl, 10, 60)).toBe(325000);
+    expect(effectivePortCapacity(ctrl, 8, 120)).toBe(325000);
+  });
+  it('상별 합계, 불평형률, 추천 상', () => {
+    const mk = (phase: 'L1' | 'L2' | 'L3', a: number) => ({ index: 0, id: '', label: '', cells: [], currentA: a, watts: a * 220, load: 0, phase });
+    const r = computePhaseLoads([mk('L1', 10), mk('L2', 10), mk('L3', 5)], true);
+    expect(r.phases.map((x) => x.currentA)).toEqual([10, 10, 5]);
+    expect(r.imbalancePct).toBeCloseTo((5 / (25 / 3)) * 100, 6);
+    expect(suggestPhase(r.phases)).toBe('L3');
   });
 });

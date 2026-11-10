@@ -111,11 +111,9 @@ export function DeviceSettings() {
           </div>
         )}
 
-        <div className="grid-2">
-          <Segmented label="입력 비트" value={p.bitDepth} onChange={(v: BitDepth) => update({ bitDepth: v })}
-            options={[{ value: 8, label: '8bit' }, { value: 10, label: '10bit' }, { value: 12, label: '12bit' }]} />
-          <NumberField label="주사율" value={p.frameRate} min={23} max={240} integer unit="Hz" onChange={(v) => update({ frameRate: v })} />
-        </div>
+        <Segmented label="입력 비트" value={p.bitDepth} onChange={(v: BitDepth) => update({ bitDepth: v })}
+          options={[{ value: 8, label: '8bit' }, { value: 10, label: '10bit' }, { value: 12, label: '12bit' }]} />
+        <NumberField label="주사율" value={p.frameRate} min={23} max={240} integer unit="Hz" onChange={(v) => update({ frameRate: v })} />
       </Section>
 
       {dialog && <CustomDeviceDialog defaultBrand={brand} onClose={() => setDialog(false)}

@@ -60,20 +60,6 @@ export interface CabinetSpec {
   weightKg: number;
 }
 
-export type Corner = 'TL' | 'TR' | 'BL' | 'BR';
-export type Direction = 'horizontal' | 'vertical';
-/** serpentine: S자(왕복), zigzag: Z자(매 줄 같은 방향에서 시작) */
-export type Pattern = 'serpentine' | 'zigzag';
-/** line: 줄(행/열) 단위로 포트 나눔, fill: 최대 용량까지 채움 */
-export type SplitMode = 'line' | 'fill';
-
-export interface RouteSettings {
-  start: Corner;
-  direction: Direction;
-  pattern: Pattern;
-  split: SplitMode;
-}
-
 export type PowerSystem = 'single' | 'three';
 export type PowerBasis = 'max' | 'avg';
 
@@ -90,13 +76,31 @@ export interface PowerSettings {
   /** 전원 케이블/커넥터 1라인 허용 전류 */
   chainLimitA: number;
   basis: PowerBasis;
-  route: RouteSettings;
+}
+
+export type Phase = 'L1' | 'L2' | 'L3';
+
+/** 수동 데이터 배선: 포트 1개가 연결하는 캐비닛 순서 */
+export interface DataRun {
+  id: string;
+  /** 컨트롤러 번호 (0부터) */
+  unit: number;
+  /** 포트 번호 (1부터) */
+  port: number;
+  cells: Cell[];
+}
+
+/** 수동 전원 배선: 회로 1개가 연결하는 캐비닛 순서 */
+export interface PowerRun {
+  id: string;
+  phase: Phase;
+  cells: Cell[];
 }
 
 export type BitDepth = 8 | 10 | 12;
 
 export interface Project {
-  version: 1;
+  version: 2;
   id: string;
   name: string;
   updatedAt: number;
@@ -107,8 +111,9 @@ export interface Project {
   receivingCardId: string;
   bitDepth: BitDepth;
   frameRate: number;
-  mapping: RouteSettings;
   power: PowerSettings;
+  dataRuns: DataRun[];
+  powerRuns: PowerRun[];
   customControllers: ControllerSpec[];
   customCards: ReceivingCardSpec[];
 }

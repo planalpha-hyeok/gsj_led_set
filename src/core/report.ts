@@ -25,7 +25,7 @@ export function buildReport(p: Project, a: Analysis): Report {
   const three = p.power.system === 'three';
   const ports = a.data?.ports ?? [];
   const units = a.data?.units.length ?? 0;
-  const circuits = a.phases.circuits;
+  const circuits = a.circuits.circuits;
 
   const summary: ReportRow[] = [
     { label: '캐비닛', value: `${p.cabinet.name} · ${p.cols} × ${p.rows} = ${n(s.cabinetCount)}개` },
@@ -60,17 +60,19 @@ export function buildReport(p: Project, a: Analysis): Report {
     { label: '전원 인입 케이블', value: `${circuits.length} 개` },
     { label: '전원 점퍼 (캐비닛 간)', value: `${sumJumpers(circuits)} 개` },
   ];
+  if ((a.data?.unassigned ?? 0) > 0 || a.circuits.unassigned > 0) {
+    bom.push({ label: '미연결 캐비닛', value: `데이터 ${a.data?.unassigned ?? 0} / 전원 ${a.circuits.unassigned}`, note: '배선 미완료' });
+  }
 
-  const multi = units > 1;
-  const portRows = ports.map((pr) => [
-    multi ? `U${pr.unit + 1}-P${pr.portNo}` : `P${pr.portNo}`,
+  const portRows = [...ports].sort((x, y) => x.unit - y.unit || x.portNo - y.portNo).map((pr) => [
+    pr.label,
     String(pr.cells.length),
     n(pr.pixels),
     `${(pr.load * 100).toFixed(1)}%`,
   ]);
 
   const circuitRows = circuits.map((c) => [
-    `C${c.index + 1}`,
+    c.label,
     three ? c.phase : '-',
     String(c.cells.length),
     n(c.watts),

@@ -20,6 +20,8 @@ const paths = {
   x: 'M6 6l12 12M18 6 6 18',
   check: 'M5 12l5 5 9-10',
   screen: 'M3 5h18v11H3zM8 20h8M12 16v4',
+  undo: 'M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3',
+  redo: 'M15 14l5-5-5-5M20 9H10a6 6 0 0 0 0 12h3',
   copy: 'M9 9h11v11H9zM5 15H4V4h11v1',
 } as const;
 

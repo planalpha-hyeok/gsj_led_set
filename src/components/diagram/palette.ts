@@ -1,4 +1,4 @@
-import type { Phase } from '../../core/powerCircuit';
+import type { Phase } from '../../types';
 
 /**
  * 배선도 색상

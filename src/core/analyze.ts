@@ -5,7 +5,7 @@ import { computePower, recommendBreaker, type PowerTotals } from './powerCalc';
 import { buildCircuits, type CircuitResult } from './powerCircuit';
 import { checkReceivingCard, type CardResult } from './receivingCard';
 import { computeScreen, type ScreenInfo } from './screenLayout';
-import { assignPhases, type PhaseResult } from './threePhase';
+import { computePhaseLoads, type PhaseResult } from './threePhase';
 
 export interface Analysis {
   screen: ScreenInfo;
@@ -58,7 +58,7 @@ export function analyze(p: Project): Analysis {
   const circuits = buildCircuits(p, power.cabinetW, power.cabinetA);
   issues.push(...circuits.issues);
   const three = p.power.system === 'three';
-  const phases = assignPhases(circuits.circuits, three);
+  const phases = computePhaseLoads(circuits.circuits, three);
   issues.push(...phases.issues);
 
   const mainCurrent = three ? Math.max(...phases.phases.map((x) => x.currentA)) : power.singlePhaseA;

@@ -1,5 +1,5 @@
 import { useProject } from '../../store/ProjectContext';
-import { LoadBar } from '../ui/Badge';
+import { LoadBar, ProgressBar } from '../ui/Badge';
 import { Icon } from '../ui/Icon';
 import { phaseColor, phaseName } from '../diagram/palette';
 import type { Severity } from '../../types';
@@ -23,7 +23,7 @@ export function InfoPanel() {
   const s = a.screen;
   const ports = a.data?.ports ?? [];
   const maxPortLoad = ports.reduce((m, x) => Math.max(m, x.load), 0);
-  const maxCircuitLoad = a.phases.circuits.reduce((m, x) => Math.max(m, x.load), 0);
+  const maxCircuitLoad = a.circuits.circuits.reduce((m, x) => Math.max(m, x.load), 0);
   const three = p.power.system === 'three';
   const issues = [...a.issues].sort((x, y) => sevOrder[x.severity] - sevOrder[y.severity]);
   const errCount = issues.filter((i) => i.severity === 'error').length;
@@ -42,10 +42,17 @@ export function InfoPanel() {
         <Stat label="캐비닛" value={String(s.cabinetCount)} unit="개" sub={`${Math.round(s.weightKg)} kg`} />
         <Stat label="수신카드" value={String(a.cardResult?.totalCards ?? 0)} unit="장" />
         <Stat label="컨트롤러" value={String(a.data?.units.length ?? 0)} unit="대" sub={a.controller?.model} />
-        <Stat label="사용 포트" value={String(ports.length)} unit="개" sub={a.data ? `포트당 ${a.data.cabinetsPerPort}개` : undefined} />
+        <Stat label="사용 포트" value={String(ports.length)} unit="개" sub={a.data ? `포트당 최대 ${a.data.cabinetsPerPort}개` : undefined} />
         <Stat label="최대 전력" value={(a.power.totalMaxW / 1000).toFixed(2)} unit="kW" sub={`평균 ${(a.power.totalAvgW / 1000).toFixed(2)} kW`} />
         <Stat label={three ? '선전류(평형)' : '총 전류'} value={(three ? a.power.threePhaseLineA : a.power.singlePhaseA).toFixed(1)} unit="A"
-          sub={`회로 ${a.phases.circuits.length}개`} />
+          sub={`회로 ${a.circuits.circuits.length}개`} />
+      </div>
+
+      <div className="progress-block">
+        <div className="load-row"><span>데이터 배선</span><span className="mono">{s.cabinetCount - (a.data?.unassigned ?? s.cabinetCount)} / {s.cabinetCount}</span></div>
+        <ProgressBar value={(s.cabinetCount - (a.data?.unassigned ?? s.cabinetCount)) / Math.max(1, s.cabinetCount)} />
+        <div className="load-row"><span>전원 배선</span><span className="mono">{s.cabinetCount - a.circuits.unassigned} / {s.cabinetCount}</span></div>
+        <ProgressBar value={(s.cabinetCount - a.circuits.unassigned) / Math.max(1, s.cabinetCount)} />
       </div>
 
       <div className="load-block">
