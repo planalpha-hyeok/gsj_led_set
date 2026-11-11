@@ -1,6 +1,7 @@
 import type { Analysis } from '../../core/analyze';
-import type { Project } from '../../types';
+import type { Cell, Project } from '../../types';
 import { AssignedGrid } from '../diagram/AssignedGrid';
+import { CursorMark } from '../diagram/CursorMark';
 import { DiagramBase } from '../diagram/DiagramBase';
 import { computeGeometry } from '../diagram/geometry';
 import { Legend, legendHeight, type LegendItem } from '../diagram/Legend';
@@ -13,10 +14,13 @@ interface Props {
   theme: DiagramTheme;
   /** 편집 중인 회로 순서 (화면 편집 시에만) */
   activeIndex?: number;
+  /** 키보드 커서 (화면 편집 시에만) */
+  cursor?: Cell;
+  drawing?: boolean;
 }
 
 /** 전원 배선도: 3상이면 상별 색, 단상이면 회로별 색 */
-export function PowerDiagram({ project: p, analysis: a, theme, activeIndex }: Props) {
+export function PowerDiagram({ project: p, analysis: a, theme, activeIndex, cursor, drawing }: Props) {
   const three = p.power.system === 'three';
   const circuits = a.circuits.circuits;
   const g0 = computeGeometry(p);
@@ -47,6 +51,7 @@ export function PowerDiagram({ project: p, analysis: a, theme, activeIndex }: Pr
           startLabel={ci.label} labelColor="#0b0e12"
           dim={activeIndex !== undefined && activeIndex !== ci.index} />
       ))}
+      {cursor && <CursorMark cell={cursor} geom={g} drawing={!!drawing} />}
       <Legend items={items} geom={g} theme={theme} />
     </DiagramBase>
   );

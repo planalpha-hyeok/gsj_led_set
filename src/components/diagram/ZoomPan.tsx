@@ -18,6 +18,8 @@ interface Props {
   /** 이 값이 바뀌면 화면에 맞춤을 다시 실행 */
   fitKey: string;
   interaction?: CellInteraction;
+  /** 항상 보이도록 따라갈 영역 (내용 좌표, 키보드 커서 위치) */
+  focus?: { x: number; y: number; w: number; h: number };
   children: ReactNode;
 }
 
@@ -37,7 +39,7 @@ function cellAt(x: number, y: number): Cell | null {
  * - 빈 곳 드래그 또는 가운데 버튼 드래그: 이동
  * - 내용이 화면 안에 다 들어와서 더 이동할 곳이 없으면 휠은 페이지 스크롤로 넘김
  */
-export function ZoomPan({ width, height, fitKey, interaction, children }: Props) {
+export function ZoomPan({ width, height, fitKey, interaction, focus, children }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const [view, setView] = useState({ s: 1, x: 0, y: 0 });
   const viewRef = useRef(view);
@@ -108,6 +110,27 @@ export function ZoomPan({ width, height, fitKey, interaction, children }: Props)
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
   }, [clamp]);
+
+  // 커서가 화면 밖으로 나가면 보이는 위치까지만 이동
+  const fx = focus?.x;
+  const fy = focus?.y;
+  useEffect(() => {
+    const el = box.current;
+    if (!el || !focus) return;
+    const v = viewRef.current;
+    const m = 40;
+    const left = focus.x * v.s + v.x;
+    const top = focus.y * v.s + v.y;
+    const right = left + focus.w * v.s;
+    const bottom = top + focus.h * v.s;
+    let dx = 0;
+    let dy = 0;
+    if (left < m) dx = m - left;
+    else if (right > el.clientWidth - m) dx = el.clientWidth - m - right;
+    if (top < m) dy = m - top;
+    else if (bottom > el.clientHeight - m - 50) dy = el.clientHeight - m - 50 - bottom;
+    if (dx || dy) setView(clamp({ s: v.s, x: v.x + dx, y: v.y + dy }));
+  }, [fx, fy]); // 커서 위치가 바뀔 때만 실행
 
   const zoomBy = (k: number) => {
     const el = box.current;
