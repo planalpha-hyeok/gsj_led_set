@@ -5,6 +5,11 @@ NovaStar / Colorlight 장비를 지원합니다.
 
 ## 실행 방법
 
+### 0) 웹 링크
+https://planalpha-hyeok.github.io/gsj_led_set/
+
+main 브랜치에 올라오면 GitHub Actions가 자동으로 테스트·빌드해서 위 링크에 반영합니다 (`.github/workflows/deploy.yml`).
+
 ### 1) 파일로 실행 (인터넷 필요 없음)
 ```bash
 npm install
