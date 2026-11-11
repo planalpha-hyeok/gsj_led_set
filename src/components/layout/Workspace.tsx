@@ -7,6 +7,9 @@ import { PowerDiagram } from '../power/PowerDiagram';
 import { ReportView } from '../report/ReportView';
 import { ScreenDiagram } from '../screen/ScreenDiagram';
 import { Icon, type IconName } from '../ui/Icon';
+import { cellOrigin, computeGeometry } from '../diagram/geometry';
+import type { CellInteraction } from '../diagram/ZoomPan';
+import { useKeyboardWiring, type KeyboardWiring } from '../wiring/useKeyboardWiring';
 import { useWiringEditor } from '../wiring/useWiringEditor';
 import { WiringBar } from '../wiring/WiringBar';
 
@@ -36,6 +39,17 @@ export function Workspace({ tab, onTab }: Props) {
 
   const dataEditor = useWiringEditor('data', dataActive, setDataSel);
   const powerEditor = useWiringEditor('power', powerActive, setPowerSel);
+  const dataKb = useKeyboardWiring('data', tab === 'mapping', dataActive, setDataSel);
+  const powerKb = useKeyboardWiring('power', tab === 'power', powerActive, setPowerSel);
+
+  /** 마우스로 캐비닛을 누르면 키보드 커서도 그 위치로 */
+  const withCursor = (editor: CellInteraction, kb: KeyboardWiring): CellInteraction => ({
+    ...editor,
+    onDown: (cell) => {
+      kb.setCursor(cell);
+      return editor.onDown(cell);
+    },
+  });
 
   const renderStage = () => {
     if (tab === 'report') return <ReportView />;
@@ -46,18 +60,23 @@ export function Workspace({ tab, onTab }: Props) {
       return <ZoomPan width={size.width} height={size.height} fitKey={fitKey}><ScreenDiagram {...props} /></ZoomPan>;
     }
     const isData = tab === 'mapping';
+    const kb = isData ? dataKb : powerKb;
+    const g = computeGeometry(p);
+    const co = cellOrigin(g, kb.cursor);
+    const focus = { x: co.x, y: co.y, w: g.cellW, h: g.cellH };
     const activeIndex = isData
       ? p.dataRuns.findIndex((r) => r.id === dataActive)
       : p.powerRuns.findIndex((r) => r.id === powerActive);
     return (
       <div className="stage-edit">
         <WiringBar kind={isData ? 'data' : 'power'} activeId={isData ? dataActive : powerActive}
-          setActiveId={isData ? setDataSel : setPowerSel} />
+          setActiveId={isData ? setDataSel : setPowerSel} drawing={kb.drawing} cursor={kb.cursor} />
         <div className="stage-canvas">
-          <ZoomPan width={size.width} height={size.height} fitKey={fitKey} interaction={isData ? dataEditor : powerEditor}>
+          <ZoomPan width={size.width} height={size.height} fitKey={fitKey} focus={focus}
+            interaction={withCursor(isData ? dataEditor : powerEditor, kb)}>
             {isData
-              ? <MappingDiagram {...props} activeIndex={activeIndex >= 0 ? activeIndex : undefined} />
-              : <PowerDiagram {...props} activeIndex={activeIndex >= 0 ? activeIndex : undefined} />}
+              ? <MappingDiagram {...props} activeIndex={activeIndex >= 0 ? activeIndex : undefined} cursor={kb.cursor} drawing={kb.drawing} />
+              : <PowerDiagram {...props} activeIndex={activeIndex >= 0 ? activeIndex : undefined} cursor={kb.cursor} drawing={kb.drawing} />}
           </ZoomPan>
         </div>
       </div>

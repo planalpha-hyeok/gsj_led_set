@@ -1,6 +1,7 @@
 import type { Analysis } from '../../core/analyze';
-import type { Project } from '../../types';
+import type { Cell, Project } from '../../types';
 import { AssignedGrid } from '../diagram/AssignedGrid';
+import { CursorMark } from '../diagram/CursorMark';
 import { DiagramBase } from '../diagram/DiagramBase';
 import { computeGeometry } from '../diagram/geometry';
 import { Legend, legendHeight, type LegendItem } from '../diagram/Legend';
@@ -13,10 +14,13 @@ interface Props {
   theme: DiagramTheme;
   /** 편집 중인 포트 순서 (화면 편집 시에만) */
   activeIndex?: number;
+  /** 키보드 커서 (화면 편집 시에만) */
+  cursor?: Cell;
+  drawing?: boolean;
 }
 
 /** 데이터 배선도 (화면 표시·내보내기 공용, 순수 SVG) */
-export function MappingDiagram({ project: p, analysis: a, theme, activeIndex }: Props) {
+export function MappingDiagram({ project: p, analysis: a, theme, activeIndex, cursor, drawing }: Props) {
   const ports = a.data?.ports ?? [];
   const g0 = computeGeometry(p);
   const g = computeGeometry(p, legendHeight(ports.length, g0.width));
@@ -44,6 +48,7 @@ export function MappingDiagram({ project: p, analysis: a, theme, activeIndex }: 
           startLabel={pr.label.replace('U', '').replace('P', '')} labelColor="#0b0e12"
           dim={activeIndex !== undefined && activeIndex !== pr.index} />
       ))}
+      {cursor && <CursorMark cell={cursor} geom={g} drawing={!!drawing} />}
       <Legend items={items} geom={g} theme={theme} />
     </DiagramBase>
   );

@@ -3,7 +3,8 @@ import { PHASES, suggestPhase } from '../../core/threePhase';
 import { newDataRun, newPowerRun } from '../../store/defaults';
 import { useProject } from '../../store/ProjectContext';
 import { mapRun } from '../../store/wiringOps';
-import type { Phase } from '../../types';
+import type { Cell, Phase } from '../../types';
+import { cellName } from '../diagram/geometry';
 import { phaseColor, phaseName, portColor } from '../diagram/palette';
 import { Icon } from '../ui/Icon';
 import type { WiringKind } from './useWiringEditor';
@@ -12,10 +13,13 @@ interface Props {
   kind: WiringKind;
   activeId: string | undefined;
   setActiveId: (id: string) => void;
+  /** 키보드 배선 상태 */
+  drawing: boolean;
+  cursor: Cell;
 }
 
 /** 배선 편집 도구 막대: 포트/회로 목록, 선택, 추가·삭제, 포트 번호·상 변경 */
-export function WiringBar({ kind, activeId, setActiveId }: Props) {
+export function WiringBar({ kind, activeId, setActiveId, drawing, cursor }: Props) {
   const { project: p, analysis: a, updateDataRuns, updatePowerRuns } = useProject();
   const three = p.power.system === 'three';
   const ctrl = a.controller;
@@ -103,8 +107,15 @@ export function WiringBar({ kind, activeId, setActiveId }: Props) {
         </div>
       )}
 
-      <div className="wiring-help">
-        캐비닛 클릭·드래그: 연결 · 마지막 캐비닛 다시 클릭: 취소 · 다른 색 캐비닛 클릭: 선택 · 빈 곳 드래그/휠: 이동 · Ctrl+휠: 확대 · Ctrl+Z: 되돌리기
+      <div className="wiring-status">
+        <span className={`kb-state ${drawing ? 'drawing' : ''}`}>
+          {drawing ? `배선 중 · ${items.find((x) => x.id === activeId)?.label ?? ''}` : '대기'} · 커서 {cellName(cursor)}
+        </span>
+        <span className="wiring-help">
+          {drawing
+            ? <><kbd>방향키</kbd> 연결 · 되돌아가면 취소 <kbd>Shift</kbd>+<kbd>방향키</kbd> 끝까지 <kbd>Backspace</kbd> 하나 취소 <kbd>Space</kbd>/<kbd>Esc</kbd> 끝</>
+            : <><kbd>방향키</kbd> 이동 <kbd>Space</kbd> 시작·이어그리기 / 배선 위: 여기부터 삭제 / 시작점: 전체 삭제 <kbd>Tab</kbd> {kind === 'data' ? '포트' : '회로'} 선택 <kbd>N</kbd> 새 {kind === 'data' ? '포트' : '회로'} <kbd>Ctrl</kbd>+<kbd>Z</kbd> 되돌리기 · 마우스 클릭·드래그도 가능</>}
+        </span>
       </div>
     </div>
   );
