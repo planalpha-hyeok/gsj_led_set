@@ -15,6 +15,8 @@
 class QAction;
 class QDockWidget;
 class QLabel;
+class QStackedWidget;
+class QToolBar;
 
 namespace led {
 
@@ -25,6 +27,7 @@ class InteractivePanel;
 class TimelineEditor;
 class LogPanel;
 class OutputManager;
+class OperatorPanel;
 class OutputPanel;
 class PlaybackEngine;
 class ProjectController;
@@ -74,6 +77,9 @@ private slots:
     void onCanvasClicked(int x, int y);
     void applyInteractiveConfig();
 
+    // 운영 모드 (MainWindowOperator.cpp)
+    void setOperatorMode(bool enabled);
+
 private:
     void createActions();
     void createDocks();
@@ -86,6 +92,9 @@ private:
     void warnIfPrimaryOutput();
     void setupInteractive();
     void setupTimeline();
+    void setupOperator();
+    void refreshPlaybackIndicators();   // 도구모음 시계 + 운영 화면 상태 (초당 20번)
+    void operatorPlayScene(const QString& sceneId);
     // 재생 엔진에 넘길 프로젝트 (외부 명령으로 바꾼 자막/표시 적용)
     Project playbackProject() const;
     void refreshPlaybackFromOverrides();
@@ -119,6 +128,13 @@ private:
     InteractiveConfig m_appliedInteractive;
     bool m_interactiveApplied = false;
     int m_triggerDepth = 0;
+
+    QToolBar* m_toolbar = nullptr;
+    QLabel* m_clockLabel = nullptr;
+    QStackedWidget* m_centerStack = nullptr;
+    OperatorPanel* m_operatorPanel = nullptr;
+    QAction* m_operatorAction = nullptr;
+    QByteArray m_editLayoutState;       // 운영 모드로 바꾸기 전 편집 화면 배치
 };
 
 } // namespace led

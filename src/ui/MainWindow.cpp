@@ -97,6 +97,7 @@ MainWindow::MainWindow(QWidget* parent)
     // 출력 화면이 편집 화면을 가려도 쓸 수 있는 비상 단축키
     setupInteractive();
     setupTimeline();
+    setupOperator();
 
     m_hotkey = new EmergencyHotkey(this, this);
     connect(m_hotkey, &EmergencyHotkey::triggered, this, &MainWindow::emergencyStop);
@@ -117,8 +118,6 @@ void MainWindow::createDocks()
 {
     auto* tabs = new QTabWidget(this);
     tabs->addTab(new RegionPanel(m_controller, tabs), QStringLiteral("영역"));
-    m_scenePanel = new ScenePanel(m_controller, tabs);
-    tabs->addTab(m_scenePanel, QStringLiteral("장면"));
     m_schedulePanel = new SchedulePanel(m_controller, tabs);
     tabs->addTab(m_schedulePanel, QStringLiteral("스케줄"));
     m_outputPanel = new OutputPanel(m_controller, tabs);
@@ -126,6 +125,17 @@ void MainWindow::createDocks()
     tabs->addTab(new CanvasPanel(m_controller, tabs), QStringLiteral("캔버스"));
     m_interactivePanel = new InteractivePanel(m_controller, tabs);
     tabs->addTab(m_interactivePanel, QStringLiteral("인터랙티브"));
+
+    // 장면 목록: 왼쪽 (시안 A)
+    m_scenePanel = new ScenePanel(m_controller, this);
+    auto* sceneDock = new QDockWidget(QStringLiteral("장면"), this);
+    sceneDock->setObjectName("sceneDock");
+    sceneDock->setWidget(m_scenePanel);
+    sceneDock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable |
+                           QDockWidget::DockWidgetClosable);
+    sceneDock->setMinimumWidth(220);
+    addDockWidget(Qt::LeftDockWidgetArea, sceneDock);
+    resizeDocks({sceneDock}, {240}, Qt::Horizontal);
 
     auto* propertiesDock = new QDockWidget(QStringLiteral("설정"), this);
     propertiesDock->setObjectName("propertiesDock");
@@ -248,6 +258,7 @@ void MainWindow::createActions()
         viewMenu->addAction(dock->toggleViewAction());
 
     QToolBar* toolbar = addToolBar(QStringLiteral("도구"));
+    m_toolbar = toolbar;
     toolbar->setObjectName("mainToolbar");
     toolbar->setMovable(false);
     toolbar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
@@ -258,6 +269,10 @@ void MainWindow::createActions()
     toolbar->addSeparator();
     toolbar->addAction(m_playAction);
     toolbar->addAction(m_stopAction);
+    m_clockLabel = new QLabel(QStringLiteral("■ 정지"), toolbar);
+    m_clockLabel->setObjectName("clockLabel");
+    m_clockLabel->setMinimumWidth(190);
+    toolbar->addWidget(m_clockLabel);
     toolbar->addAction(m_scheduleAction);
     toolbar->addSeparator();
     toolbar->addAction(m_outputAction);

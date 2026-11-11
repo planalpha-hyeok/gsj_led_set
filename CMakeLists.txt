@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(gsj_led_player VERSION 0.6.1 LANGUAGES CXX)
+project(gsj_led_player VERSION 0.7.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -140,6 +140,12 @@ add_executable(gsj_led_player
     src/ui/SchedulePanel.cpp
     src/ui/MainWindow.cpp
     src/ui/MainWindowInteractive.cpp
+    src/ui/MainWindowOperator.cpp
+    src/ui/operator/ProgramMonitor.cpp
+    src/ui/operator/CueProgressBar.cpp
+    src/ui/operator/OperatorSceneGrid.cpp
+    src/ui/operator/OperatorRegionControls.cpp
+    src/ui/operator/OperatorPanel.cpp
     src/ui/InteractivePanel.cpp
     src/ui/timeline/TimelineView.cpp
     src/ui/timeline/TimelinePropertyPanel.cpp

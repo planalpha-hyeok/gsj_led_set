@@ -272,6 +272,7 @@ void MainWindow::setupTimeline()
         const bool playingThis =
             !id.isEmpty() && m_engine->isPlaying() && QString::fromStdString(m_engine->sceneId()) == id;
         m_timelineEditor->setPlaybackStatus(playingThis ? m_engine->timelineStatus() : TimelineStatus{}, playingThis);
+        refreshPlaybackIndicators();
     });
     m_timelineStatusTimer.start();
 }

@@ -10,8 +10,8 @@ namespace led::icons {
 
 namespace {
 
-const QColor kLine(214, 217, 223);
-const QColor kDisabled(105, 108, 115);
+const QColor kLine(201, 205, 212);   // palette::kTextSecondary
+const QColor kDisabled(96, 102, 113); // palette::kTextDisabled
 
 // 24x24 좌표계에 그리는 함수로 여러 크기의 아이콘 생성
 QIcon make(const std::function<void(QPainter&, const QColor&)>& draw)

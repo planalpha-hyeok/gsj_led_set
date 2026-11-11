@@ -1,6 +1,7 @@
 #include "ui/CanvasView.h"
 
 #include "core/Snap.h"
+#include "ui/Palette.h"
 #include "display/DisplayInfo.h"
 #include "ui/ProjectController.h"
 
@@ -25,8 +26,8 @@ namespace led {
 
 namespace {
 
-const QColor kRegionColors[] = {QColor(235, 87, 87),  QColor(76, 194, 120), QColor(74, 144, 226),
-                                QColor(242, 184, 56), QColor(186, 104, 230), QColor(64, 200, 200)};
+const QColor kRegionColors[] = {QColor(76, 141, 255), QColor(245, 165, 36), QColor(160, 120, 230),
+                                QColor(79, 195, 138), QColor(63, 208, 201), QColor(255, 107, 99)};
 const QColor kOutputColor(255, 255, 255);
 const QColor kGuideColor(255, 64, 200);
 constexpr double kHandleScreenPx = 7.0;  // 테두리 잡기 범위 (화면 픽셀)
@@ -232,7 +233,7 @@ CanvasView::CanvasView(ProjectController* controller, QWidget* parent)
     setScene(m_scene);
     setRenderHint(QPainter::Antialiasing, false);
     setRenderHint(QPainter::TextAntialiasing, true);
-    setBackgroundBrush(QColor(24, 25, 28));
+    setBackgroundBrush(palette::kBackground);
     setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
     setResizeAnchor(QGraphicsView::AnchorViewCenter);
     setDragMode(QGraphicsView::NoDrag);
@@ -279,9 +280,9 @@ void CanvasView::rebuild()
     m_regionItems.clear();
 
     const QRectF canvasRect(0, 0, project.canvas.width, project.canvas.height);
-    auto* canvas = m_scene->addRect(canvasRect, QPen(Qt::NoPen), QBrush(QColor(8, 8, 8)));
+    auto* canvas = m_scene->addRect(canvasRect, QPen(Qt::NoPen), QBrush(QColor(5, 6, 8)));
     canvas->setZValue(-100);
-    QPen canvasPen(QColor(110, 110, 110));
+    QPen canvasPen(QColor(58, 64, 76));
     canvasPen.setCosmetic(true);
     auto* canvasBorder = m_scene->addRect(canvasRect, canvasPen, Qt::NoBrush);
     canvasBorder->setZValue(-99);

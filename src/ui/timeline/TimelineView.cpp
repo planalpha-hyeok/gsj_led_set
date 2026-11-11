@@ -4,6 +4,7 @@
 #include "core/LayerContent.h"
 #include "core/TimelineEdit.h"
 #include "media/MediaInfo.h"
+#include "ui/Palette.h"
 
 #include <QContextMenuEvent>
 #include <QDragEnterEvent>
@@ -34,17 +35,17 @@ constexpr int kEdgeGrab = 6;
 constexpr double kMinPxPerSec = 2.0;
 constexpr double kMaxPxPerSec = 800.0;
 
-const QColor kBg(27, 28, 31);
-const QColor kHeaderBg(35, 36, 39);
-const QColor kRowA(31, 32, 35);
-const QColor kRowB(36, 37, 41);
-const QColor kGrid(55, 57, 62);
-const QColor kText(214, 217, 223);
-const QColor kDim(130, 134, 142);
-const QColor kPlayhead(235, 87, 87);
-const QColor kCue(242, 184, 56);
+const QColor kBg = palette::kBackground;
+const QColor kHeaderBg = palette::kPanel;
+const QColor kRowA = palette::kBackground;
+const QColor kRowB(15, 17, 21);
+const QColor kGrid = palette::kBorder;
+const QColor kText = palette::kText;
+const QColor kDim = palette::kTextDim;
+const QColor kPlayhead = palette::kLive;
+const QColor kCue = palette::kSelect;
 const QColor kSnap(255, 64, 200);
-const QColor kGroupBg(44, 46, 52);
+const QColor kGroupBg = palette::kRaised;
 
 QColor clipColor(const TimelineClip& clip)
 {
@@ -502,7 +503,7 @@ void TimelineView::paintGroupRow(QPainter& p, const Row& row, const QRect& area)
     // 레이어 추가 버튼
     const QRect add = groupAddRect(row);
     p.setPen(Qt::NoPen);
-    p.setBrush(QColor(60, 63, 68));
+    p.setBrush(palette::kHover);
     p.drawRoundedRect(add, 3, 3);
     p.setPen(kText);
     p.drawText(add, Qt::AlignCenter, QStringLiteral("+"));
@@ -538,7 +539,7 @@ void TimelineView::paintLayerRow(QPainter& p, const Row& row, const QRect& area)
     p.fillRect(QRect(kHeaderWidth, y, area.width(), kRowHeight), l % 2 ? kRowB : kRowA);
     // 머리
     const QRect head(0, y, kHeaderWidth, kRowHeight);
-    p.fillRect(head, l == m_selectedLayer ? QColor(47, 74, 125) : kHeaderBg);
+    p.fillRect(head, l == m_selectedLayer ? palette::kSelectBg : kHeaderBg);
     p.fillRect(QRect(0, y, 6, kRowHeight), kGroupBg); // 그룹 들여쓰기
     p.setPen(kGrid);
     p.drawLine(0, y + kRowHeight - 1, area.right(), y + kRowHeight - 1);
@@ -573,10 +574,9 @@ void TimelineView::paintLayerRow(QPainter& p, const Row& row, const QRect& area)
         // 눈에 띄어야 하는 상태: 숨김/무음/잠금, 반복 켬
         const bool active = (t.which == Toggle::Lock || t.which == Toggle::Repeat) ? t.on : !t.on;
         p.setPen(Qt::NoPen);
-        p.setBrush(active ? (t.which == Toggle::Repeat ? QColor(50, 120, 80) : QColor(150, 80, 40))
-                          : QColor(60, 63, 68));
+        p.setBrush(active ? (t.which == Toggle::Repeat ? QColor(29, 58, 44) : QColor(74, 50, 18)) : palette::kHover);
         p.drawRoundedRect(r, 3, 3);
-        p.setPen(kText);
+        p.setPen(active ? (t.which == Toggle::Repeat ? QColor(143, 224, 181) : QColor(245, 200, 120)) : kText);
         p.drawText(r, Qt::AlignCenter, QString::fromUtf8(t.on ? t.onText : t.offText));
     }
 
