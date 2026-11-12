@@ -4,10 +4,12 @@ import { Sidebar } from './components/layout/Sidebar';
 import { TopBar } from './components/layout/TopBar';
 import { Workspace, type TabKind } from './components/layout/Workspace';
 import { ProjectProvider } from './store/ProjectContext';
+import { ThemeProvider } from './store/theme';
 
 export default function App() {
   const [tab, setTab] = useState<TabKind>('mapping');
   return (
+    <ThemeProvider>
     <ProjectProvider>
       <div className="app">
         <TopBar tab={tab} />
@@ -18,5 +20,6 @@ export default function App() {
         </div>
       </div>
     </ProjectProvider>
+    </ThemeProvider>
   );
 }

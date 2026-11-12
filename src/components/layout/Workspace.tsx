@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useProject } from '../../store/ProjectContext';
+import { useTheme } from '../../store/theme';
 import { diagramSize, type ViewKind } from '../diagram/diagramSize';
 import { ZoomPan } from '../diagram/ZoomPan';
 import { MappingDiagram } from '../mapping/MappingDiagram';
@@ -30,6 +31,7 @@ interface Props {
 /** 가운데 작업 영역: 탭 + 배선 편집 + 배선도 */
 export function Workspace({ tab, onTab }: Props) {
   const { project: p, analysis: a } = useProject();
+  const { theme } = useTheme();
   const [dataSel, setDataSel] = useState<string>();
   const [powerSel, setPowerSel] = useState<string>();
 
@@ -54,7 +56,7 @@ export function Workspace({ tab, onTab }: Props) {
   const renderStage = () => {
     if (tab === 'report') return <ReportView />;
     const size = diagramSize(tab, p, a);
-    const props = { project: p, analysis: a, theme: 'dark' as const };
+    const props = { project: p, analysis: a, theme };
     const fitKey = `${tab}-${p.cols}-${p.rows}-${p.id}`;
     if (tab === 'screen') {
       return <ZoomPan width={size.width} height={size.height} fitKey={fitKey}><ScreenDiagram {...props} /></ZoomPan>;

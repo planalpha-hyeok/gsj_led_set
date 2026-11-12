@@ -26,7 +26,7 @@ export function MappingDiagram({ project: p, analysis: a, theme, activeIndex, cu
   const g = computeGeometry(p, legendHeight(ports.length, g0.width));
 
   const items: LegendItem[] = ports.map((pr) => ({
-    color: portColor(pr.index),
+    color: portColor(pr.index, theme),
     label: pr.label,
     detail: `${pr.cells.length}개 · ${pr.pixels.toLocaleString()}px · ${(pr.load * 100).toFixed(0)}%`,
     danger: pr.load > 1,
@@ -42,13 +42,13 @@ export function MappingDiagram({ project: p, analysis: a, theme, activeIndex, cu
   return (
     <DiagramBase project={p} geom={g} theme={theme} title="데이터 배선" subtitle={subtitle}>
       <AssignedGrid project={p} geom={g} theme={theme} groups={ports.map((pr) => pr.cells)}
-        colorOf={portColor} nameOf={(i) => ports[i].label} activeGroup={activeIndex} />
+        colorOf={(i) => portColor(i, theme)} nameOf={(i) => ports[i].label} activeGroup={activeIndex} />
       {ports.map((pr) => (
-        <RouteLine key={pr.id} cells={pr.cells} geom={g} color={portColor(pr.index)}
-          startLabel={pr.label.replace('U', '').replace('P', '')} labelColor="#0b0e12"
+        <RouteLine key={pr.id} cells={pr.cells} geom={g} color={portColor(pr.index, theme)}
+          startLabel={pr.label.replace('U', '').replace('P', '')} labelColor={theme === 'light' ? '#ffffff' : '#0b0e12'}
           dim={activeIndex !== undefined && activeIndex !== pr.index} />
       ))}
-      {cursor && <CursorMark cell={cursor} geom={g} drawing={!!drawing} />}
+      {cursor && <CursorMark cell={cursor} geom={g} drawing={!!drawing} theme={theme} />}
       <Legend items={items} geom={g} theme={theme} />
     </DiagramBase>
   );

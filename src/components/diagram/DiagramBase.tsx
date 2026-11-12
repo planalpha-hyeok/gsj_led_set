@@ -29,8 +29,8 @@ export function DiagramBase({ project: p, geom: g, theme, title, subtitle, child
     >
       <rect x={0} y={0} width={g.width} height={g.height} fill={t.bg} />
 
-      <text x={g.padL} y={24} fill={t.title} fontSize={17} fontWeight={700}>{title}</text>
-      {subtitle && <text x={g.padL} y={44} fill={t.textMuted} fontSize={12}>{subtitle}</text>}
+      <text x={g.width / 2} y={34} fill={t.title} fontSize={19} fontWeight={800} textAnchor="middle">{title}</text>
+      {subtitle && <text x={g.width / 2} y={56} fill={t.textMuted} fontSize={12.5} textAnchor="middle">{subtitle}</text>}
 
       {/* 열 이름 (A, B, C...) */}
       {Array.from({ length: p.cols }, (_, c) => (
@@ -46,7 +46,7 @@ export function DiagramBase({ project: p, geom: g, theme, title, subtitle, child
       {children}
 
       {/* 전체 크기 */}
-      <text x={g.padL + g.gridW} y={g.padT + g.gridH + 22} fill={t.textMuted} fontSize={12} textAnchor="end" fontFamily={MONO_STACK}>
+      <text x={g.width / 2} y={g.padT + g.gridH + 28} fill={t.textMuted} fontSize={12} textAnchor="middle" fontFamily={MONO_STACK}>
         {`${(totalW / 1000).toFixed(2)} m × ${(totalH / 1000).toFixed(2)} m · ${p.cabinet.widthPx * p.cols} × ${p.cabinet.heightPx * p.rows} px`}
       </text>
     </svg>

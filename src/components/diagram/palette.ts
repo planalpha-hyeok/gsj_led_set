@@ -14,26 +14,30 @@ export interface ThemeColors {
   textMuted: string;
   ruler: string;
   title: string;
+  /** 강조색 (화면 테두리, 커서) */
+  accent: string;
 }
 
 export const themeColors: Record<DiagramTheme, ThemeColors> = {
   dark: {
-    bg: '#0b0e12',
-    cell: '#151a21',
-    cellStroke: '#2a313c',
-    text: '#e8ecf2',
-    textMuted: '#7b8597',
-    ruler: '#4a5465',
+    bg: '#050507',
+    cell: '#0f0f13',
+    cellStroke: '#26262e',
+    text: '#ecebf1',
+    textMuted: '#7a7787',
+    ruler: '#45434f',
     title: '#ffffff',
+    accent: '#b04cf5',
   },
   light: {
     bg: '#ffffff',
-    cell: '#f3f5f8',
-    cellStroke: '#c5ccd6',
-    text: '#111418',
-    textMuted: '#5d6675',
-    ruler: '#8e98a8',
+    cell: '#f4f3f7',
+    cellStroke: '#b9b5c6',
+    text: '#141218',
+    textMuted: '#57525f',
+    ruler: '#8c879a',
     title: '#000000',
+    accent: '#a020f0',
   },
 };
 
@@ -45,8 +49,18 @@ const PORT_COLORS = [
   '#3cb8e6', '#e6bf2e', '#e86e3e', '#5cc84c', '#c65ee6',
 ];
 
-export function portColor(i: number): string {
-  return PORT_COLORS[i % PORT_COLORS.length];
+/**
+ * 흰 배경용: 같은 색 계열을 어둡게 (검정과 섞음) → 연한 색이 흰 배경에서 묻히지 않게
+ */
+function deepen(hex: string, k = 0.3): string {
+  const n = parseInt(hex.slice(1), 16);
+  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => Math.round(v * (1 - k)));
+  return `#${ch.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
+export function portColor(i: number, theme: DiagramTheme = 'dark'): string {
+  const c = PORT_COLORS[i % PORT_COLORS.length];
+  return theme === 'light' ? deepen(c) : c;
 }
 
 /** 3상 색상 (R/S/T 표기 병행) */
@@ -55,6 +69,10 @@ export const phaseColor: Record<Phase, string> = {
   L2: '#ffc547',
   L3: '#5b9dff',
 };
+
+export function phaseColorFor(ph: Phase, theme: DiagramTheme = 'dark'): string {
+  return theme === 'light' ? deepen(phaseColor[ph], 0.22) : phaseColor[ph];
+}
 
 export const phaseName: Record<Phase, string> = {
   L1: 'L1 (R)',

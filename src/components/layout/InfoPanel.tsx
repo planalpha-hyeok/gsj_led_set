@@ -1,7 +1,8 @@
 import { useProject } from '../../store/ProjectContext';
 import { LoadBar, ProgressBar } from '../ui/Badge';
 import { Icon } from '../ui/Icon';
-import { phaseColor, phaseName } from '../diagram/palette';
+import { phaseColorFor, phaseName } from '../diagram/palette';
+import { useTheme } from '../../store/theme';
 import type { Severity } from '../../types';
 
 const sevIcon: Record<Severity, 'alert' | 'info'> = { error: 'alert', warning: 'alert', info: 'info' };
@@ -20,6 +21,7 @@ function Stat({ label, value, unit, sub }: { label: string; value: string; unit?
 /** 오른쪽 패널: 핵심 수치, 부하, 경고 */
 export function InfoPanel() {
   const { project: p, analysis: a } = useProject();
+  const { theme } = useTheme();
   const s = a.screen;
   const ports = a.data?.ports ?? [];
   const maxPortLoad = ports.reduce((m, x) => Math.max(m, x.load), 0);
@@ -69,8 +71,8 @@ export function InfoPanel() {
             const max = Math.max(...a.phases.phases.map((x) => x.currentA), 1);
             return (
               <div key={ph.phase} className="phase-row">
-                <span className="phase-name" style={{ color: phaseColor[ph.phase] }}>{phaseName[ph.phase]}</span>
-                <span className="phase-bar"><span style={{ width: `${(ph.currentA / max) * 100}%`, background: phaseColor[ph.phase] }} /></span>
+                <span className="phase-name" style={{ color: phaseColorFor(ph.phase, theme) }}>{phaseName[ph.phase]}</span>
+                <span className="phase-bar"><span style={{ width: `${(ph.currentA / max) * 100}%`, background: phaseColorFor(ph.phase, theme) }} /></span>
                 <span className="mono">{ph.currentA.toFixed(1)}A</span>
               </div>
             );

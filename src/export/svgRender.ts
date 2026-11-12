@@ -6,17 +6,15 @@ import type { DiagramTheme } from '../components/diagram/palette';
 import { MappingDiagram } from '../components/mapping/MappingDiagram';
 import { PowerDiagram } from '../components/power/PowerDiagram';
 import { ScreenDiagram } from '../components/screen/ScreenDiagram';
-import { ReportSheet } from '../components/report/ReportSheet';
+import { ReportSheet, type ReportPart } from '../components/report/ReportSheet';
 
-export type DiagramKind = 'screen' | 'mapping' | 'power' | 'report' | 'report-summary' | 'report-tables';
+export type DiagramKind = 'screen' | 'mapping' | 'power' | 'report';
 
 export const diagramTitle: Record<DiagramKind, string> = {
   screen: '화면배치',
-  mapping: '데이터매핑',
+  mapping: '데이터배선',
   power: '전원배선',
   report: '요약보고서',
-  'report-summary': '요약',
-  'report-tables': '포트회로표',
 };
 
 /** 배선도를 SVG 문자열로 생성 (화면에 그린 것과 같은 컴포넌트 사용) */
@@ -26,11 +24,16 @@ export function renderSvg(kind: DiagramKind, project: Project, analysis: Analysi
     kind === 'screen' ? createElement(ScreenDiagram, props)
       : kind === 'mapping' ? createElement(MappingDiagram, props)
         : kind === 'power' ? createElement(PowerDiagram, props)
-          : createElement(ReportSheet, {
-            ...props,
-            part: kind === 'report-summary' ? 'summary' : kind === 'report-tables' ? 'tables' : 'all',
-          });
+          : createElement(ReportSheet, props);
   return renderToStaticMarkup(el);
+}
+
+/** 보고서 일부 (PDF 페이지용) */
+export function renderReportSvg(
+  project: Project, analysis: Analysis, theme: DiagramTheme,
+  opts: { part: ReportPart; rowFrom?: number; rowTo?: number; pageNote?: string },
+): string {
+  return renderToStaticMarkup(createElement(ReportSheet, { project, analysis, theme, ...opts }));
 }
 
 export interface RasterOptions {
