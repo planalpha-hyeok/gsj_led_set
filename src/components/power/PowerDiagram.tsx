@@ -5,7 +5,7 @@ import { CursorMark } from '../diagram/CursorMark';
 import { DiagramBase } from '../diagram/DiagramBase';
 import { computeGeometry } from '../diagram/geometry';
 import { Legend, legendHeight, type LegendItem } from '../diagram/Legend';
-import { phaseColor, phaseName, portColor, type DiagramTheme } from '../diagram/palette';
+import { phaseColorFor, phaseName, portColor, type DiagramTheme } from '../diagram/palette';
 import { RouteLine } from '../diagram/RouteLine';
 
 interface Props {
@@ -26,7 +26,7 @@ export function PowerDiagram({ project: p, analysis: a, theme, activeIndex, curs
   const g0 = computeGeometry(p);
   const g = computeGeometry(p, legendHeight(circuits.length, g0.width));
 
-  const colorOf = (i: number) => (three ? phaseColor[circuits[i].phase] : portColor(i));
+  const colorOf = (i: number) => (three ? phaseColorFor(circuits[i].phase, theme) : portColor(i, theme));
   const nameOf = (i: number) => `${circuits[i].label}${three ? ` ${circuits[i].phase}` : ''}`;
 
   const items: LegendItem[] = circuits.map((ci) => ({
@@ -48,10 +48,10 @@ export function PowerDiagram({ project: p, analysis: a, theme, activeIndex, curs
         colorOf={colorOf} nameOf={nameOf} activeGroup={activeIndex} />
       {circuits.map((ci) => (
         <RouteLine key={ci.id} cells={ci.cells} geom={g} color={colorOf(ci.index)}
-          startLabel={ci.label} labelColor="#0b0e12"
+          startLabel={ci.label} labelColor={theme === 'light' ? '#ffffff' : '#0b0e12'}
           dim={activeIndex !== undefined && activeIndex !== ci.index} />
       ))}
-      {cursor && <CursorMark cell={cursor} geom={g} drawing={!!drawing} />}
+      {cursor && <CursorMark cell={cursor} geom={g} drawing={!!drawing} theme={theme} />}
       <Legend items={items} geom={g} theme={theme} />
     </DiagramBase>
   );

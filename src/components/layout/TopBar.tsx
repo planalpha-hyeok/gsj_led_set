@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { exportPdf, exportPng } from '../../export/exportImage';
 import { exportProjectJson, importProjectJson } from '../../export/projectFile';
 import { useProject } from '../../store/ProjectContext';
+import { useTheme } from '../../store/theme';
 import { Icon } from '../ui/Icon';
 import { ProjectsDialog } from './ProjectsDialog';
 import type { TabKind } from './Workspace';
@@ -9,6 +10,7 @@ import type { TabKind } from './Workspace';
 /** 상단 바: 프로젝트 이름, 저장/불러오기, 내보내기 */
 export function TopBar({ tab }: { tab: TabKind }) {
   const { project, analysis, update, setProject, undo, redo, canUndo, canRedo } = useProject();
+  const { theme, setTheme } = useTheme();
   const [dialog, setDialog] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -49,6 +51,10 @@ export function TopBar({ tab }: { tab: TabKind }) {
       <div className="topbar-actions">
         <button type="button" className="icon-btn" onClick={undo} disabled={!canUndo} title="실행 취소 (Ctrl+Z)"><Icon name="undo" size={16} /></button>
         <button type="button" className="icon-btn" onClick={redo} disabled={!canRedo} title="다시 실행 (Ctrl+Y)"><Icon name="redo" size={16} /></button>
+        <button type="button" className="icon-btn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          title={theme === 'dark' ? '라이트 모드로' : '다크 모드로'} aria-label="화면 모드 전환">
+          <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
+        </button>
         <span className="divider" />
         <button type="button" className="btn ghost" onClick={() => setDialog(true)}><Icon name="folder" size={15} />프로젝트</button>
         <button type="button" className="btn ghost" onClick={() => exportProjectJson(project)}><Icon name="save" size={15} />파일 저장</button>
@@ -56,7 +62,7 @@ export function TopBar({ tab }: { tab: TabKind }) {
         <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={(e) => onFile(e.target.files?.[0])} />
         <span className="divider" />
         <button type="button" className="btn" disabled={!!busy}
-          onClick={() => run('PNG 저장', () => exportPng(tab, project, analysis, 'light'))}>
+          onClick={() => run('PNG 저장', () => exportPng(tab, project, analysis, theme))}>
           <Icon name="download" size={15} />{busy === 'PNG 저장' ? '저장 중…' : 'PNG'}
         </button>
         <button type="button" className="btn primary" disabled={!!busy}

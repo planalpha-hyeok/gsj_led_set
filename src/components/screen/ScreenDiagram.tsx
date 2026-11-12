@@ -24,7 +24,7 @@ export function ScreenDiagram({ project: p, analysis: a, theme }: Props) {
       subtitle={`${p.cabinet.name} · ${p.cols} × ${p.rows} = ${s.cabinetCount}개 · ${s.widthPx} × ${s.heightPx} px (${s.aspect})`}
     >
       <rect x={g.padL - 4} y={g.padT - 4} width={g.gridW + 8} height={g.gridH + 8} rx={8} fill="none"
-        stroke="#35e0b8" strokeOpacity={0.35} strokeWidth={2} />
+        stroke={t.accent} strokeOpacity={0.35} strokeWidth={2} />
       {Array.from({ length: p.rows }, (_, r) =>
         Array.from({ length: p.cols }, (_, c) => {
           const o = cellOrigin(g, { c, r });

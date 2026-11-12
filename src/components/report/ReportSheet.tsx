@@ -1,111 +1,148 @@
+import type { ReactElement } from 'react';
 import type { Analysis } from '../../core/analyze';
 import { buildReport, circuitHeader, portHeader, type ReportRow } from '../../core/report';
 import type { Project } from '../../types';
 import { FONT_STACK, MONO_STACK, themeColors, type DiagramTheme } from '../diagram/palette';
 
-export type ReportPart = 'all' | 'summary' | 'tables';
+/**
+ * 보고서 SVG (A4 세로 비율, PNG·PDF 공용)
+ * - all: 요약 + 표 전체 (PNG)
+ * - summary: 요약·확인 사항 (PDF 1쪽)
+ * - ports / circuits: 표 (PDF, rowFrom~rowTo 만큼 나눠서)
+ */
+export type ReportPart = 'all' | 'summary' | 'ports' | 'circuits';
 
 interface Props {
   project: Project;
   analysis: Analysis;
   theme: DiagramTheme;
-  /** all: 전체 (PNG), summary: 요약·확인 사항, tables: 포트·회로 표 (PDF 페이지 분리용) */
   part?: ReportPart;
+  rowFrom?: number;
+  rowTo?: number;
+  /** 표가 여러 쪽일 때 "(1/2)" 표시 */
+  pageNote?: string;
+  /** PDF용: 높이를 A4 세로 비율 이상으로 */
+  minPage?: boolean;
 }
 
-const W = 1120;
-const ROW = 22;
-const COL_W = (W - 40 * 2 - 30 * 2) / 3;
+export const SHEET_W = 800;
+const M = 48;
+const ROW = 24;
+const NOTE_H = 14;
+const GAP = 28;
+/** PDF 한 쪽에 넣을 표 행 수 */
+export const ROWS_PER_PAGE = 38;
+/** A4 세로 비율 높이 */
+export const PAGE_H = Math.round(SHEET_W * 1.414);
 
-/** 요약 보고서 SVG (PNG·PDF 공용) */
-export function ReportSheet({ project: p, analysis: a, theme, part = 'all' }: Props) {
+const accentOf = (theme: DiagramTheme) => themeColors[theme].accent;
+
+export function ReportSheet({ project: p, analysis: a, theme, part = 'all', rowFrom = 0, rowTo, pageNote, minPage }: Props) {
   const t = themeColors[theme];
   const r = buildReport(p, a);
-  const errors = a.issues.filter((i) => i.severity !== 'info');
+  const issues = a.issues.filter((i) => i.severity !== 'info');
+  const errColor = theme === 'light' ? '#c8102e' : '#ff5d6c';
+  const warnColor = theme === 'light' ? '#a86200' : '#ffb547';
+  const els: ReactElement[] = [];
+  let y = 0;
 
-  const showSummary = part !== 'tables';
-  const showTables = part !== 'summary';
-  const blockH = (rows: number) => 30 + rows * ROW;
-  const topH = showSummary ? Math.max(blockH(r.summary.length), blockH(r.power.length), blockH(r.bom.length)) + 20 : 0;
-  const tableRows = Math.max(r.ports.length, r.circuits.length);
-  const tablesTop = 110 + topH;
-  const tablesH = showTables ? 30 + (tableRows + 1) * ROW + 20 : 0;
-  const issuesTop = tablesTop + tablesH;
-  const H = showSummary ? issuesTop + 30 + Math.max(1, errors.length) * ROW + 30 : issuesTop + 30;
-
-  const kv = (title: string, rows: ReportRow[], x: number, y: number) => (
-    <g>
-      <text x={x} y={y} fill={t.title} fontSize={14} fontWeight={700}>{title}</text>
-      <line x1={x} x2={x + COL_W} y1={y + 8} y2={y + 8} stroke={t.cellStroke} />
-      {rows.map((row, i) => (
-        <g key={i}>
-          <text x={x} y={y + 28 + i * ROW} fill={t.textMuted} fontSize={11.5}>{row.label}</text>
-          <text x={x + COL_W} y={y + 28 + i * ROW} fill={t.text} fontSize={11.5} textAnchor="end" fontFamily={MONO_STACK}>{row.value}</text>
-        </g>
-      ))}
-    </g>
+  // ── 머리글 ──
+  els.push(<rect key="bar" x={0} y={0} width={SHEET_W} height={6} fill={accentOf(theme)} />);
+  els.push(<text key="t" x={M} y={58} fill={t.title} fontSize={26} fontWeight={800}>{p.name}</text>);
+  els.push(
+    <text key="st" x={M} y={84} fill={t.textMuted} fontSize={12.5}>
+      LED 전광판 배선·전원 계획서 · {new Date(p.updatedAt).toLocaleString('ko-KR')}{pageNote ? ` · ${pageNote}` : ''}
+    </text>,
   );
+  y = 116;
 
-  const table = (title: string, header: string[], rows: string[][], x: number, y: number, width: number) => {
-    const cw = width / header.length;
-    return (
-      <g>
-        <text x={x} y={y} fill={t.title} fontSize={14} fontWeight={700}>{title}</text>
-        <rect x={x} y={y + 10} width={width} height={ROW} fill={t.cell} />
-        {header.map((h, i) => (
-          <text key={i} x={x + cw * i + 8} y={y + 10 + ROW * 0.68} fill={t.textMuted} fontSize={11} fontWeight={600}>{h}</text>
-        ))}
-        {rows.map((row, ri) => (
-          <g key={ri}>
-            <line x1={x} x2={x + width} y1={y + 10 + ROW * (ri + 2)} y2={y + 10 + ROW * (ri + 2)} stroke={t.cellStroke} strokeOpacity={0.6} />
-            {row.map((v, ci) => (
-              <text key={ci} x={x + cw * ci + 8} y={y + 10 + ROW * (ri + 1) + ROW * 0.68} fill={t.text} fontSize={11} fontFamily={MONO_STACK}>{v}</text>
-            ))}
-          </g>
-        ))}
-      </g>
-    );
+  /** 제목 + 이름/값 목록. 반환값: 그린 높이 */
+  const kv = (key: string, title: string, rows: ReportRow[], x: number, top: number, w: number): number => {
+    let yy = top;
+    els.push(<text key={`${key}-t`} x={x} y={yy} fill={t.title} fontSize={14} fontWeight={800}>{title}</text>);
+    els.push(<line key={`${key}-l`} x1={x} x2={x + w} y1={yy + 9} y2={yy + 9} stroke={t.cellStroke} />);
+    yy += 30;
+    rows.forEach((row, i) => {
+      els.push(<text key={`${key}-${i}-a`} x={x} y={yy} fill={t.textMuted} fontSize={12}>{row.label}</text>);
+      els.push(<text key={`${key}-${i}-b`} x={x + w} y={yy} fill={t.text} fontSize={12} textAnchor="end" fontFamily={MONO_STACK}>{row.value}</text>);
+      if (row.note) {
+        els.push(<text key={`${key}-${i}-c`} x={x + w} y={yy + NOTE_H} fill={t.textMuted} fontSize={10} textAnchor="end">{row.note}</text>);
+        yy += NOTE_H;
+      }
+      yy += ROW;
+    });
+    return yy - top;
   };
 
-  const half = (W - 80 - 30) / 2;
-  const date = new Date(p.updatedAt).toLocaleString('ko-KR');
+  /** 표. 반환값: 그린 높이 */
+  const table = (key: string, title: string, header: string[], rows: string[][], top: number): number => {
+    const w = SHEET_W - M * 2;
+    const cw = w / header.length;
+    els.push(<text key={`${key}-t`} x={M} y={top} fill={t.title} fontSize={14} fontWeight={800}>{title}</text>);
+    const ht = top + 12;
+    els.push(<rect key={`${key}-h`} x={M} y={ht} width={w} height={ROW} rx={4} fill={t.cell} />);
+    header.forEach((h, i) => els.push(
+      <text key={`${key}-h${i}`} x={M + cw * i + 10} y={ht + ROW * 0.68} fill={t.textMuted} fontSize={11.5} fontWeight={700}>{h}</text>,
+    ));
+    rows.forEach((row, ri) => {
+      const ry = ht + ROW * (ri + 1);
+      els.push(<line key={`${key}-r${ri}`} x1={M} x2={M + w} y1={ry + ROW} y2={ry + ROW} stroke={t.cellStroke} strokeOpacity={0.5} />);
+      row.forEach((v, ci) => els.push(
+        <text key={`${key}-${ri}-${ci}`} x={M + cw * ci + 10} y={ry + ROW * 0.68} fill={t.text} fontSize={11.5}
+          fontFamily={ci === 0 ? FONT_STACK : MONO_STACK} fontWeight={ci === 0 ? 700 : 400}>{v}</text>,
+      ));
+    });
+    if (rows.length === 0) {
+      els.push(<text key={`${key}-empty`} x={M + 10} y={ht + ROW * 1.68} fill={t.textMuted} fontSize={11.5}>배선 없음</text>);
+    }
+    return 12 + ROW * (Math.max(1, rows.length) + 1);
+  };
+
+  if (part === 'all' || part === 'summary') {
+    const colW = (SHEET_W - M * 2 - GAP) / 2;
+    const h1 = kv('sum', '화면 / 장비', r.summary, M, y, colW);
+    const h2 = kv('pow', '전력', r.power, M + colW + GAP, y, colW);
+    y += Math.max(h1, h2) + GAP;
+    y += kv('bom', '자재 수량', r.bom, M, y, SHEET_W - M * 2) + GAP;
+
+    els.push(<text key="is-t" x={M} y={y} fill={t.title} fontSize={14} fontWeight={800}>확인 사항</text>);
+    y += 28;
+    if (issues.length === 0) {
+      els.push(<text key="is-none" x={M} y={y} fill={t.textMuted} fontSize={12}>경고 없음</text>);
+      y += ROW;
+    }
+    issues.forEach((e, i) => {
+      els.push(
+        <text key={`is-${i}`} x={M} y={y} fill={e.severity === 'error' ? errColor : warnColor} fontSize={12}>
+          {e.severity === 'error' ? '■ 오류  ' : '▲ 주의  '}{e.message}
+        </text>,
+      );
+      y += ROW;
+    });
+    y += GAP;
+  }
+
+  if (part === 'all' || part === 'ports') {
+    const rows = part === 'all' ? r.ports : r.ports.slice(rowFrom, rowTo);
+    y += table('ports', '데이터 포트', portHeader, rows, y) + GAP + 8;
+  }
+  if (part === 'all' || part === 'circuits') {
+    const rows = part === 'all' ? r.circuits : r.circuits.slice(rowFrom, rowTo);
+    y += table('circ', '전원 회로', circuitHeader, rows, y) + GAP + 8;
+  }
+
+  // PDF 쪽은 A4 세로 비율로 맞춰서 모든 쪽의 글자 크기를 같게
+  const H = minPage ? Math.max(y + 30, PAGE_H) : y + 30;
+  els.push(
+    <text key="foot" x={M} y={H - 16} fill={t.textMuted} fontSize={10}>
+      본 계산은 참고용입니다. 장비 사양은 제조사 사양서, 전기 공사는 전기 관련 법규와 자격자 확인을 따르십시오.
+    </text>,
+  );
 
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" width={W} height={H} viewBox={`0 0 ${W} ${H}`} fontFamily={FONT_STACK}>
-      <rect width={W} height={H} fill={t.bg} />
-      <rect x={0} y={0} width={W} height={6} fill="#35e0b8" />
-      <text x={40} y={52} fill={t.title} fontSize={24} fontWeight={800}>{p.name}</text>
-      <text x={40} y={78} fill={t.textMuted} fontSize={12}>LED 전광판 매핑·전원 계획서 · {date}</text>
-
-      {showSummary && (
-        <g>
-          {kv('화면 / 장비', r.summary, 40, 110)}
-          {kv('전력', r.power, 40 + COL_W + 30, 110)}
-          {kv('자재 수량', r.bom, 40 + (COL_W + 30) * 2, 110)}
-        </g>
-      )}
-
-      {showTables && (
-        <g>
-          {table('데이터 포트', portHeader, r.ports, 40, tablesTop, half)}
-          {table('전원 회로', circuitHeader, r.circuits, 40 + half + 30, tablesTop, half)}
-        </g>
-      )}
-
-      {showSummary && (
-        <g>
-          <text x={40} y={issuesTop} fill={t.title} fontSize={14} fontWeight={700}>확인 사항</text>
-          {errors.length === 0 && <text x={40} y={issuesTop + 28} fill={t.textMuted} fontSize={11.5}>경고 없음</text>}
-          {errors.map((e, i) => (
-            <text key={i} x={40} y={issuesTop + 28 + i * ROW} fill={e.severity === 'error' ? '#e5484d' : '#d18a00'} fontSize={11.5}>
-              {e.severity === 'error' ? '■ 오류  ' : '▲ 주의  '}{e.message}
-            </text>
-          ))}
-        </g>
-      )}
-      <text x={40} y={H - 14} fill={t.textMuted} fontSize={10}>
-        본 계산은 참고용입니다. 장비 사양은 제조사 사양서, 전기 공사는 전기 관련 법규와 자격자 확인을 따르십시오.
-      </text>
+    <svg xmlns="http://www.w3.org/2000/svg" width={SHEET_W} height={H} viewBox={`0 0 ${SHEET_W} ${H}`} fontFamily={FONT_STACK}>
+      <rect width={SHEET_W} height={H} fill={t.bg} />
+      {els}
     </svg>
   );
 }

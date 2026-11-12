@@ -15,16 +15,25 @@ export interface Geometry {
   font: number;
 }
 
+/** 좌우 최소 여백, 그림 최소 폭 (제목·범례가 들어갈 자리) */
+export const SIDE_MARGIN = 60;
+export const MIN_WIDTH = 680;
+
+/**
+ * 격자는 항상 가로 가운데에 놓는다 (좌우 여백 동일)
+ * extraBottom: 범례 높이 (없으면 0)
+ */
 export function computeGeometry(p: Project, extraBottom = 0): Geometry {
   const cellW = 100;
   const ratio = p.cabinet.widthMm > 0 ? p.cabinet.heightMm / p.cabinet.widthMm : 1;
   const cellH = Math.max(30, Math.min(300, cellW * ratio));
-  const padL = 70;
-  const padT = 70;
-  const padR = 40;
-  const padB = 60 + extraBottom;
   const gridW = cellW * p.cols;
   const gridH = cellH * p.rows;
+  const width = Math.max(gridW + SIDE_MARGIN * 2, MIN_WIDTH);
+  const padL = (width - gridW) / 2;
+  const padR = width - padL - gridW;
+  const padT = 96;
+  const padB = 48 + extraBottom;
   return {
     cellW,
     cellH,
@@ -32,7 +41,7 @@ export function computeGeometry(p: Project, extraBottom = 0): Geometry {
     padT,
     padR,
     padB,
-    width: padL + gridW + padR,
+    width,
     height: padT + gridH + padB,
     gridW,
     gridH,

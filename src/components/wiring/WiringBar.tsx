@@ -5,7 +5,8 @@ import { useProject } from '../../store/ProjectContext';
 import { mapRun } from '../../store/wiringOps';
 import type { Cell, Phase } from '../../types';
 import { cellName } from '../diagram/geometry';
-import { phaseColor, phaseName, portColor } from '../diagram/palette';
+import { phaseColorFor, phaseName, portColor } from '../diagram/palette';
+import { useTheme } from '../../store/theme';
 import { Icon } from '../ui/Icon';
 import type { WiringKind } from './useWiringEditor';
 
@@ -21,14 +22,15 @@ interface Props {
 /** 배선 편집 도구 막대: 포트/회로 목록, 선택, 추가·삭제, 포트 번호·상 변경 */
 export function WiringBar({ kind, activeId, setActiveId, drawing, cursor }: Props) {
   const { project: p, analysis: a, updateDataRuns, updatePowerRuns } = useProject();
+  const { theme } = useTheme();
   const three = p.power.system === 'three';
   const ctrl = a.controller;
 
   const items = kind === 'data'
-    ? (a.data?.ports ?? []).map((pr) => ({ id: pr.id, label: pr.label, color: portColor(pr.index), count: pr.cells.length, load: pr.load }))
+    ? (a.data?.ports ?? []).map((pr) => ({ id: pr.id, label: pr.label, color: portColor(pr.index, theme), count: pr.cells.length, load: pr.load }))
     : a.circuits.circuits.map((c) => ({
       id: c.id, label: three ? `${c.label} ${c.phase}` : c.label,
-      color: three ? phaseColor[c.phase] : portColor(c.index), count: c.cells.length, load: c.load,
+      color: three ? phaseColorFor(c.phase, theme) : portColor(c.index, theme), count: c.cells.length, load: c.load,
     }));
 
   const add = () => {

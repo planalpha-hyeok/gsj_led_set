@@ -1,15 +1,16 @@
 import { useProject } from '../../store/ProjectContext';
 import { LoadBar, ProgressBar } from '../ui/Badge';
 import { Icon } from '../ui/Icon';
-import { phaseColor, phaseName } from '../diagram/palette';
+import { phaseColorFor, phaseName } from '../diagram/palette';
+import { useTheme } from '../../store/theme';
 import type { Severity } from '../../types';
 
 const sevIcon: Record<Severity, 'alert' | 'info'> = { error: 'alert', warning: 'alert', info: 'info' };
 const sevOrder: Record<Severity, number> = { error: 0, warning: 1, info: 2 };
 
-function Stat({ label, value, unit, sub }: { label: string; value: string; unit?: string; sub?: string }) {
+function Stat({ label, value, unit, sub, variant }: { label: string; value: string; unit?: string; sub?: string; variant?: string }) {
   return (
-    <div className="stat">
+    <div className={`stat ${variant ?? ''}`}>
       <span className="stat-label">{label}</span>
       <span className="stat-value mono">{value}{unit && <small>{unit}</small>}</span>
       {sub && <span className="stat-sub mono">{sub}</span>}
@@ -20,6 +21,7 @@ function Stat({ label, value, unit, sub }: { label: string; value: string; unit?
 /** 오른쪽 패널: 핵심 수치, 부하, 경고 */
 export function InfoPanel() {
   const { project: p, analysis: a } = useProject();
+  const { theme } = useTheme();
   const s = a.screen;
   const ports = a.data?.ports ?? [];
   const maxPortLoad = ports.reduce((m, x) => Math.max(m, x.load), 0);
@@ -37,15 +39,15 @@ export function InfoPanel() {
       </div>
 
       <div className="stat-grid">
-        <Stat label="해상도" value={`${s.widthPx}×${s.heightPx}`} sub={`${(s.totalPixels / 1e6).toFixed(2)} MP · ${s.aspect}`} />
+        <Stat variant="wide accent" label="해상도" value={`${s.widthPx}×${s.heightPx}`} sub={`${(s.totalPixels / 1e6).toFixed(2)} MP · ${s.aspect}`} />
         <Stat label="크기" value={`${(s.widthMm / 1000).toFixed(2)}×${(s.heightMm / 1000).toFixed(2)}`} unit="m" sub={`${s.areaM2.toFixed(2)} m²`} />
         <Stat label="캐비닛" value={String(s.cabinetCount)} unit="개" sub={`${Math.round(s.weightKg)} kg`} />
         <Stat label="수신카드" value={String(a.cardResult?.totalCards ?? 0)} unit="장" />
         <Stat label="컨트롤러" value={String(a.data?.units.length ?? 0)} unit="대" sub={a.controller?.model} />
         <Stat label="사용 포트" value={String(ports.length)} unit="개" sub={a.data ? `포트당 최대 ${a.data.cabinetsPerPort}개` : undefined} />
-        <Stat label="최대 전력" value={(a.power.totalW / 1000).toFixed(2)} unit="kW" sub={`캐비닛당 ${a.power.cabinetW.toFixed(0)} W`} />
         <Stat label={three ? '선전류(평형)' : '총 전류'} value={(three ? a.power.threePhaseLineA : a.power.singlePhaseA).toFixed(1)} unit="A"
           sub={`회로 ${a.circuits.circuits.length}개`} />
+        <Stat variant="wide" label="최대 전력" value={(a.power.totalW / 1000).toFixed(2)} unit="kW" sub={`캐비닛당 ${a.power.cabinetW.toFixed(0)} W`} />
       </div>
 
       <div className="progress-block">
@@ -69,8 +71,8 @@ export function InfoPanel() {
             const max = Math.max(...a.phases.phases.map((x) => x.currentA), 1);
             return (
               <div key={ph.phase} className="phase-row">
-                <span className="phase-name" style={{ color: phaseColor[ph.phase] }}>{phaseName[ph.phase]}</span>
-                <span className="phase-bar"><span style={{ width: `${(ph.currentA / max) * 100}%`, background: phaseColor[ph.phase] }} /></span>
+                <span className="phase-name" style={{ color: phaseColorFor(ph.phase, theme) }}>{phaseName[ph.phase]}</span>
+                <span className="phase-bar"><span style={{ width: `${(ph.currentA / max) * 100}%`, background: phaseColorFor(ph.phase, theme) }} /></span>
                 <span className="mono">{ph.currentA.toFixed(1)}A</span>
               </div>
             );
