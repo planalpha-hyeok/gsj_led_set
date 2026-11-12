@@ -1,14 +1,47 @@
 /* 전체 레이아웃 (벤토 그리드): 상단바 / 설정 카드 / 작업 카드 / 결과 카드
    모든 영역은 둥근 카드이고 카드 사이는 같은 간격(--gap) */
-.app { display: flex; flex-direction: column; height: 100%; background: var(--bg); }
+.app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; background: var(--bg); overflow: hidden; }
 
 .body {
   flex: 1;
   min-height: 0;
+  position: relative;
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr) 300px;
   gap: var(--gap);
   padding: 0 var(--gap) var(--gap);
+}
+
+/* 넓은 화면: 열린 패널만 옆에 자리를 차지 */
+.body.wide { grid-template-columns: minmax(0, 1fr); }
+.body.wide.left-open { grid-template-columns: 320px minmax(0, 1fr); }
+.body.wide.right-open { grid-template-columns: minmax(0, 1fr) 300px; }
+.body.wide.left-open.right-open { grid-template-columns: 320px minmax(0, 1fr) 300px; }
+.body.wide .sidebar:not(.open), .body.wide .info:not(.open) { display: none; }
+
+/* 좁은 화면: 배선도가 전체 폭, 패널은 위에 덮는 서랍 */
+.body.narrow { grid-template-columns: minmax(0, 1fr); }
+.body.narrow .sidebar, .body.narrow .info {
+  position: absolute;
+  top: 0;
+  bottom: var(--gap);
+  z-index: 30;
+  width: min(360px, calc(100% - var(--gap) * 2));
+  padding: 6px 6px 24px;
+  background: var(--bg);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow);
+  transition: transform 0.22s ease, visibility 0.22s;
+  visibility: hidden;
+}
+.body.narrow .sidebar { left: var(--gap); transform: translateX(calc(-100% - var(--gap) * 2)); }
+.body.narrow .info { right: var(--gap); transform: translateX(calc(100% + var(--gap) * 2)); }
+.body.narrow .sidebar.open, .body.narrow .info.open { transform: none; visibility: visible; }
+.drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  background: var(--backdrop);
+  border-radius: var(--radius-l);
 }
 
 /* 공통 카드 */
@@ -23,9 +56,10 @@
 .topbar {
   margin: var(--gap);
   height: 56px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 10px;
   padding: 0 12px 0 14px;
   background: var(--panel);
   border: 1px solid var(--line);
@@ -48,7 +82,7 @@
 
 .project-name {
   flex: 1;
-  min-width: 120px;
+  min-width: 60px;
   max-width: 380px;
   background: transparent;
   border: 1px solid transparent;
@@ -61,7 +95,7 @@
 .project-name:hover { border-color: var(--line); background: var(--panel-2); }
 .project-name:focus { outline: none; border-color: var(--accent); background: var(--panel-2); }
 
-.topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 .divider { width: 1px; height: 22px; background: var(--line); margin: 0 6px; }
 
 /* ── 왼쪽 설정: 카드 묶음 ── */
@@ -90,6 +124,9 @@
   display: flex;
   gap: 4px;
   margin: 10px 10px 0;
+  max-width: calc(100% - 20px);
+  overflow-x: auto;
+  flex-shrink: 0;
   padding: 4px;
   border-radius: var(--radius);
   background: var(--panel-2);
@@ -139,12 +176,14 @@
 }
 
 @media (max-width: 1280px) {
-  .body { grid-template-columns: 290px minmax(0, 1fr) 270px; }
   .brand-name { display: none; }
 }
-@media (max-width: 900px) {
-  .body { grid-template-columns: 1fr; grid-template-rows: auto 75vh auto; overflow-y: auto; }
-  .sidebar, .info { overflow: visible; }
-  .topbar { height: auto; flex-wrap: wrap; padding: 10px 14px; }
-  .topbar-actions { flex-wrap: wrap; }
+/* 휴대폰: 간격 축소 */
+@media (max-width: 599px) {
+  :root { --gap: 8px; }
+  .topbar { height: 52px; padding: 0 6px; gap: 4px; }
+  .brand { display: none; }
+  .stage { margin: 8px; }
+  .tabs { margin: 8px 8px 0; align-self: stretch; }
+  .tab { flex: 1; justify-content: center; padding: 0 8px; }
 }

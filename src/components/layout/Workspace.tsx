@@ -16,11 +16,12 @@ import { WiringBar } from '../wiring/WiringBar';
 
 export type TabKind = ViewKind | 'report';
 
-export const TABS: { id: TabKind; label: string; icon: IconName }[] = [
-  { id: 'screen', label: '화면 배치', icon: 'grid' },
-  { id: 'mapping', label: '데이터 배선', icon: 'route' },
-  { id: 'power', label: '전원 배선', icon: 'bolt' },
-  { id: 'report', label: '요약 보고서', icon: 'report' },
+/** short: 좁은 화면용 짧은 이름 */
+export const TABS: { id: TabKind; label: string; short: string; icon: IconName }[] = [
+  { id: 'screen', label: '화면 배치', short: '배치', icon: 'grid' },
+  { id: 'mapping', label: '데이터 배선', short: '데이터', icon: 'route' },
+  { id: 'power', label: '전원 배선', short: '전원', icon: 'bolt' },
+  { id: 'report', label: '요약 보고서', short: '보고서', icon: 'report' },
 ];
 
 interface Props {
@@ -92,7 +93,8 @@ export function Workspace({ tab, onTab }: Props) {
           <button key={t.id} type="button" role="tab" aria-selected={tab === t.id}
             className={`tab ${tab === t.id ? 'on' : ''}`} onClick={() => onTab(t.id)}>
             <Icon name={t.icon} size={15} />
-            {t.label}
+            <span className="tab-full">{t.label}</span>
+            <span className="tab-short">{t.short}</span>
           </button>
         ))}
       </nav>
