@@ -21,6 +21,8 @@ interface Props {
   rowTo?: number;
   /** 표가 여러 쪽일 때 "(1/2)" 표시 */
   pageNote?: string;
+  /** PDF용: 높이를 A4 세로 비율 이상으로 */
+  minPage?: boolean;
 }
 
 export const SHEET_W = 800;
@@ -30,10 +32,12 @@ const NOTE_H = 14;
 const GAP = 28;
 /** PDF 한 쪽에 넣을 표 행 수 */
 export const ROWS_PER_PAGE = 38;
+/** A4 세로 비율 높이 */
+export const PAGE_H = Math.round(SHEET_W * 1.414);
 
 const accentOf = (theme: DiagramTheme) => themeColors[theme].accent;
 
-export function ReportSheet({ project: p, analysis: a, theme, part = 'all', rowFrom = 0, rowTo, pageNote }: Props) {
+export function ReportSheet({ project: p, analysis: a, theme, part = 'all', rowFrom = 0, rowTo, pageNote, minPage }: Props) {
   const t = themeColors[theme];
   const r = buildReport(p, a);
   const issues = a.issues.filter((i) => i.severity !== 'info');
@@ -127,8 +131,8 @@ export function ReportSheet({ project: p, analysis: a, theme, part = 'all', rowF
     y += table('circ', '전원 회로', circuitHeader, rows, y) + GAP + 8;
   }
 
-  // 페이지 비율이 너무 납작하지 않도록 최소 높이 (A4 세로 비율 기준)
-  const H = Math.max(y + 30, part === 'all' ? 0 : SHEET_W * 1.2);
+  // PDF 쪽은 A4 세로 비율로 맞춰서 모든 쪽의 글자 크기를 같게
+  const H = minPage ? Math.max(y + 30, PAGE_H) : y + 30;
   els.push(
     <text key="foot" x={M} y={H - 16} fill={t.textMuted} fontSize={10}>
       본 계산은 참고용입니다. 장비 사양은 제조사 사양서, 전기 공사는 전기 관련 법규와 자격자 확인을 따르십시오.

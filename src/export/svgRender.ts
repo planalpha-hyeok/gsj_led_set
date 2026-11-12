@@ -31,7 +31,7 @@ export function renderSvg(kind: DiagramKind, project: Project, analysis: Analysi
 /** 보고서 일부 (PDF 페이지용) */
 export function renderReportSvg(
   project: Project, analysis: Analysis, theme: DiagramTheme,
-  opts: { part: ReportPart; rowFrom?: number; rowTo?: number; pageNote?: string },
+  opts: { part: ReportPart; rowFrom?: number; rowTo?: number; pageNote?: string; minPage?: boolean },
 ): string {
   return renderToStaticMarkup(createElement(ReportSheet, { project, analysis, theme, ...opts }));
 }
@@ -45,6 +45,12 @@ export interface RasterOptions {
 }
 
 /** SVG 문자열 → 이미지 (data URL) */
+/** SVG 문자열의 height 값 */
+export function svgHeight(svg: string): number {
+  const m = svg.match(/height="([\d.]+)"/);
+  return m ? Number(m[1]) : 0;
+}
+
 export function svgToImage(svg: string, opts: RasterOptions = {}): Promise<{ dataUrl: string; width: number; height: number }> {
   const { scale = 2, maxSide = 8000, format = 'png' } = opts;
   return new Promise((resolve, reject) => {

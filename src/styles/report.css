@@ -1,7 +1,7 @@
 /* 요약 보고서 탭 */
-.report { padding: 20px; display: flex; flex-direction: column; gap: 16px; max-width: 1400px; margin: 0 auto; }
-.report-grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-.report-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.report { padding: var(--gap); display: flex; flex-direction: column; gap: var(--gap); max-width: 1400px; margin: 0 auto; }
+.report-grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--gap); }
+.report-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gap); }
 @media (max-width: 1300px) {
   .report-grid-3, .report-grid-2 { grid-template-columns: 1fr; }
 }
@@ -10,10 +10,11 @@
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-l);
-  padding: 14px 16px;
+  box-shadow: var(--shadow-card);
+  padding: 16px 18px;
   min-width: 0;
 }
-.report-card h3 { margin: 0 0 10px; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+.report-card h3 { margin: 0 0 10px; font-size: 14px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
 .report-card h3 .count { font-size: 11px; color: var(--muted); background: var(--panel-3); padding: 1px 7px; border-radius: 10px; font-family: var(--font-mono); }
 
 .kv { margin: 0; display: flex; flex-direction: column; }
