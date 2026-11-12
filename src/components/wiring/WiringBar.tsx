@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { nextFreePort } from '../../core/dataMapping';
 import { PHASES, suggestPhase } from '../../core/threePhase';
 import { newDataRun, newPowerRun } from '../../store/defaults';
@@ -23,6 +24,7 @@ interface Props {
 export function WiringBar({ kind, activeId, setActiveId, drawing, cursor }: Props) {
   const { project: p, analysis: a, updateDataRuns, updatePowerRuns } = useProject();
   const { theme } = useTheme();
+  const [help, setHelp] = useState(false);
   const three = p.power.system === 'three';
   const ctrl = a.controller;
 
@@ -65,6 +67,8 @@ export function WiringBar({ kind, activeId, setActiveId, drawing, cursor }: Prop
   const activePower = kind === 'power' ? p.powerRuns.find((r) => r.id === activeId) : undefined;
   const maxUnit = Math.max(0, ...p.dataRuns.map((r) => r.unit));
 
+  const unitWord = kind === 'data' ? '포트' : '회로';
+
   return (
     <div className="wiring-bar">
       <div className="wiring-chips">
@@ -76,49 +80,66 @@ export function WiringBar({ kind, activeId, setActiveId, drawing, cursor }: Prop
             <span className="chip-meta mono">{it.count} · {(it.load * 100).toFixed(0)}%</span>
           </button>
         ))}
-        <button type="button" className="chip add" onClick={add}>
-          <Icon name="plus" size={13} />{kind === 'data' ? '포트 추가' : '회로 추가'}
+        <button type="button" className="chip add" onClick={add} title={`${unitWord} 추가 (N)`}>
+          <Icon name="plus" size={13} /><span className="chip-add-label">{unitWord} 추가</span>
         </button>
       </div>
 
-      {(activeData || activePower) && (
-        <div className="wiring-active">
-          {activeData && (
-            <>
-              <label className="mini-field">컨트롤러
-                <select value={activeData.unit} onChange={(e) => updateDataRuns((r) => r.map((x) => x.id === activeData.id ? { ...x, unit: Number(e.target.value) } : x))}>
-                  {Array.from({ length: maxUnit + 2 }, (_, u) => <option key={u} value={u}>#{u + 1}</option>)}
-                </select>
-              </label>
-              <label className="mini-field">포트
-                <select value={activeData.port} onChange={(e) => updateDataRuns((r) => r.map((x) => x.id === activeData.id ? { ...x, port: Number(e.target.value) } : x))}>
-                  {Array.from({ length: Math.max(ctrl?.ports ?? 1, activeData.port) }, (_, i) => <option key={i} value={i + 1}>{i + 1}</option>)}
-                </select>
-              </label>
-            </>
-          )}
-          {activePower && three && (
-            <label className="mini-field">상
-              <select value={activePower.phase} onChange={(e) => updatePowerRuns((r) => r.map((x) => x.id === activePower.id ? { ...x, phase: e.target.value as Phase } : x))}>
-                {PHASES.map((ph) => <option key={ph} value={ph}>{phaseName[ph]}</option>)}
+      <div className="wiring-tools">
+        {activeData && (
+          <>
+            <label className="mini-field" title="컨트롤러 번호">
+              <span className="mini-label">컨트롤러</span>
+              <select value={activeData.unit} onChange={(e) => updateDataRuns((r) => r.map((x) => x.id === activeData.id ? { ...x, unit: Number(e.target.value) } : x))}>
+                {Array.from({ length: maxUnit + 2 }, (_, u) => <option key={u} value={u}>#{u + 1}</option>)}
               </select>
             </label>
-          )}
-          <button type="button" className="btn ghost sm" onClick={clear}>비우기</button>
-          <button type="button" className="btn ghost sm danger" onClick={remove}><Icon name="trash" size={14} />삭제</button>
+            <label className="mini-field" title="포트 번호">
+              <span className="mini-label">포트</span>
+              <select value={activeData.port} onChange={(e) => updateDataRuns((r) => r.map((x) => x.id === activeData.id ? { ...x, port: Number(e.target.value) } : x))}>
+                {Array.from({ length: Math.max(ctrl?.ports ?? 1, activeData.port) }, (_, i) => <option key={i} value={i + 1}>{i + 1}</option>)}
+              </select>
+            </label>
+          </>
+        )}
+        {activePower && three && (
+          <label className="mini-field" title="상">
+            <span className="mini-label">상</span>
+            <select value={activePower.phase} onChange={(e) => updatePowerRuns((r) => r.map((x) => x.id === activePower.id ? { ...x, phase: e.target.value as Phase } : x))}>
+              {PHASES.map((ph) => <option key={ph} value={ph}>{phaseName[ph]}</option>)}
+            </select>
+          </label>
+        )}
+        {(activeData || activePower) && (
+          <>
+            <button type="button" className="icon-btn" onClick={clear} title="비우기 (연결만 모두 삭제)"><Icon name="eraser" size={16} /></button>
+            <button type="button" className="icon-btn danger" onClick={remove} title={`${unitWord} 삭제`}><Icon name="trash" size={16} /></button>
+          </>
+        )}
+        <span className={`kb-state ${drawing ? 'drawing' : ''}`} title="키보드 커서">
+          {drawing ? `배선 중 ${items.find((x) => x.id === activeId)?.label ?? ''}` : cellName(cursor)}
+        </span>
+        <button type="button" className={`icon-btn ${help ? 'on' : ''}`} onClick={() => setHelp(!help)}
+          aria-expanded={help} title="조작 방법">
+          <Icon name="help" size={17} />
+        </button>
+      </div>
+
+      {help && (
+        <div className="wiring-help-pop" role="note">
+          <div className="help-title">조작 방법</div>
+          <div className="help-keys">
+            <kbd>방향키</kbd> 이동 (배선 중이면 연결, 되돌아가면 취소) · <kbd>Shift</kbd>+<kbd>방향키</kbd> 끝까지
+          </div>
+          <div className="help-keys">
+            <kbd>Space</kbd> 시작·끝·이어그리기 / 배선 위: 여기부터 삭제 / 시작점: 전체 삭제
+          </div>
+          <div className="help-keys">
+            <kbd>Backspace</kbd> 하나 취소 · <kbd>Esc</kbd> 끝 · <kbd>Tab</kbd> {unitWord} 선택 · <kbd>N</kbd> 새 {unitWord} · <kbd>Ctrl</kbd>+<kbd>Z</kbd> 되돌리기
+          </div>
+          <div className="help-keys">마우스·터치: 캐비닛 클릭/드래그로 연결 · 빈 곳 드래그로 이동 · <kbd>Ctrl</kbd>+휠 또는 두 손가락으로 확대</div>
         </div>
       )}
-
-      <div className="wiring-status">
-        <span className={`kb-state ${drawing ? 'drawing' : ''}`}>
-          {drawing ? `배선 중 · ${items.find((x) => x.id === activeId)?.label ?? ''}` : '대기'} · 커서 {cellName(cursor)}
-        </span>
-        <span className="wiring-help">
-          {drawing
-            ? <><kbd>방향키</kbd> 연결 · 되돌아가면 취소 <kbd>Shift</kbd>+<kbd>방향키</kbd> 끝까지 <kbd>Backspace</kbd> 하나 취소 <kbd>Space</kbd>/<kbd>Esc</kbd> 끝</>
-            : <><kbd>방향키</kbd> 이동 <kbd>Space</kbd> 시작·이어그리기 / 배선 위: 여기부터 삭제 / 시작점: 전체 삭제 <kbd>Tab</kbd> {kind === 'data' ? '포트' : '회로'} 선택 <kbd>N</kbd> 새 {kind === 'data' ? '포트' : '회로'} <kbd>Ctrl</kbd>+<kbd>Z</kbd> 되돌리기 · 마우스 클릭·드래그도 가능</>}
-        </span>
-      </div>
     </div>
   );
 }

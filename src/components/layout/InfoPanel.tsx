@@ -19,7 +19,7 @@ function Stat({ label, value, unit, sub, variant }: { label: string; value: stri
 }
 
 /** 오른쪽 패널: 핵심 수치, 부하, 경고 */
-export function InfoPanel() {
+export function InfoPanel({ open }: { open: boolean }) {
   const { project: p, analysis: a } = useProject();
   const { theme } = useTheme();
   const s = a.screen;
@@ -32,7 +32,7 @@ export function InfoPanel() {
   const warnCount = issues.filter((i) => i.severity === 'warning').length;
 
   return (
-    <aside className="info">
+    <aside className={`info ${open ? 'open' : ''}`} aria-hidden={!open}>
       <div className={`status-pill ${errCount ? 'err' : warnCount ? 'warn' : 'ok'}`}>
         <Icon name={errCount || warnCount ? 'alert' : 'check'} size={15} />
         {errCount ? `오류 ${errCount}건` : warnCount ? `주의 ${warnCount}건` : '문제 없음'}

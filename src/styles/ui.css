@@ -383,15 +383,30 @@
 .stage-edit { position: absolute; inset: 0; display: flex; flex-direction: column; }
 .stage-canvas { position: relative; flex: 1; min-height: 0; }
 .wiring-bar {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 14px;
-  padding: 10px 14px;
+  gap: 8px 10px;
+  padding: 8px 10px;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
+  border-radius: var(--radius) var(--radius) 0 0;
 }
-.wiring-chips { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 420px; min-width: 0; }
+/* 포트 버튼은 한 줄, 넘치면 가로 스크롤 */
+.wiring-chips {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  flex: 1 1 240px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding: 3px 2px;
+}
+.wiring-chips::-webkit-scrollbar { height: 6px; }
+.wiring-tools { display: flex; align-items: center; gap: 4px; margin-left: auto; flex-shrink: 0; }
+.chip { flex-shrink: 0; white-space: nowrap; }
 .chip {
   display: inline-flex;
   align-items: center;
@@ -413,8 +428,7 @@
 .chip-meta { font-size: 10.5px; color: var(--muted); font-weight: 400; }
 .chip.add { border-style: dashed; color: var(--accent); background: transparent; }
 .chip.add:hover { background: var(--accent-soft); }
-.wiring-active { display: flex; align-items: center; gap: 8px; }
-.mini-field { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); }
+.mini-field { display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--muted); white-space: nowrap; margin-right: 4px; }
 .mini-field select {
   height: 28px;
   padding: 0 8px;
@@ -428,17 +442,37 @@
 .mini-field select:focus { outline: none; border-color: var(--accent); }
 .btn.sm { height: 28px; padding: 0 9px; font-size: 12px; }
 .btn.danger:hover { color: var(--err); background: var(--err-soft); }
-.wiring-status { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
 .kb-state {
   font-size: 11.5px;
   font-weight: 700;
-  padding: 2px 9px;
+  padding: 3px 9px;
   border-radius: 10px;
   background: var(--panel-3);
   color: var(--text-2);
+  white-space: nowrap;
+  font-family: var(--font-mono);
 }
 .kb-state.drawing { background: var(--accent); color: var(--accent-ink); }
-.wiring-help { font-size: 11px; color: var(--muted); line-height: 1.9; }
+.icon-btn.on { background: var(--accent-soft); color: var(--accent); }
+.wiring-help-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 10px;
+  z-index: 10;
+  width: min(560px, calc(100% - 20px));
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.7;
+}
+.help-title { font-weight: 800; color: var(--text); }
 kbd {
   display: inline-block;
   min-width: 18px;
@@ -455,3 +489,74 @@ kbd {
   text-align: center;
 }
 
+
+/* ── 상단바 버튼 ── */
+.panel-btn { display: inline-flex; align-items: center; width: auto; height: 34px; padding: 0 10px; gap: 6px; font-weight: 700; font-size: 12.5px; position: relative; flex-shrink: 0; }
+.panel-btn.on { background: var(--accent-soft); color: var(--accent); }
+.dot-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 9px;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 17px;
+  color: #fff;
+  text-align: center;
+}
+.dot-badge.err { background: var(--err); }
+.dot-badge.warn { background: var(--warn); }
+.more-menu { position: relative; }
+.menu-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  min-width: 180px;
+  padding: 6px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.menu-item:hover { background: var(--panel-2); }
+.menu-item:disabled { opacity: 0.5; }
+.menu-item.xs-only { display: none; }
+.tab-short { display: none; }
+.tab, .btn, .icon-btn { white-space: nowrap; }
+
+/* ── 화면 폭별 표시 ──
+   1100px 미만: 파일 버튼을 "⋯" 메뉴로
+   760px 미만: 버튼 글자 숨김, 탭은 짧은 이름
+   600px 미만: PNG·화면 모드도 "⋯" 메뉴로 */
+@media (min-width: 1100px) { .narrow-only { display: none !important; } }
+@media (max-width: 1099px) { .wide-only { display: none !important; } }
+@media (max-width: 759px) {
+  .btn-label, .mini-label, .chip-add-label { display: none; }
+  .tab-full { display: none; }
+  .tab-short { display: inline; }
+  .chip-meta { display: none; }
+}
+@media (max-width: 599px) {
+  .xs-hide { display: none !important; }
+  .menu-item.xs-only { display: flex; }
+}

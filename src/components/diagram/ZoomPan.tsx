@@ -37,6 +37,7 @@ function cellAt(x: number, y: number): Cell | null {
  * 배선도 보기
  * - 휠: 상하 이동 / Shift+휠: 좌우 이동 / Ctrl+휠(노트북 터치패드 확대 동작 포함): 확대·축소
  * - 빈 곳 드래그 또는 가운데 버튼 드래그: 이동
+ * - 터치: 두 손가락 벌리기/모으기로 확대·축소
  * - 내용이 화면 안에 다 들어와서 더 이동할 곳이 없으면 휠은 페이지 스크롤로 넘김
  */
 export function ZoomPan({ width, height, fitKey, interaction, focus, children }: Props) {
@@ -144,7 +145,79 @@ export function ZoomPan({ width, height, fitKey, interaction, focus, children }:
     });
   };
 
-  const stopAll = () => {
+  // 두 손가락 확대: 누른 손가락 위치와 시작 상태
+  const touches = useRef(new Map<number, { x: number; y: number }>());
+  const pinch = useRef<{ d: number; mx: number; my: number; s: number; x: number; y: number } | null>(null);
+  // 터치 한 손가락: 두 번째 손가락(확대)인지 알 수 있을 때까지 연결을 미룸
+  const pendingTouch = useRef<{ x: number; y: number; vx: number; vy: number } | null>(null);
+
+  /** 미뤄둔 터치를 실제 동작(연결 또는 이동)으로 시작 */
+  const commitTouch = (cx: number, cy: number) => {
+    const p = pendingTouch.current;
+    pendingTouch.current = null;
+    if (!p) return;
+    const it = interactionRef.current;
+    const cell = it ? cellAt(p.x, p.y) : null;
+    if (it && cell && it.onDown(cell)) {
+      painting.current = true;
+      lastCell.current = `${cell.c},${cell.r}`;
+      const now = cellAt(cx, cy);
+      if (now && `${now.c},${now.r}` !== lastCell.current) {
+        lastCell.current = `${now.c},${now.r}`;
+        it.onMove(now);
+      }
+      return;
+    }
+    pan.current = { x: p.x, y: p.y, vx: p.vx, vy: p.vy };
+  };
+
+  const local = (cx: number, cy: number) => {
+    const r = box.current!.getBoundingClientRect();
+    return { x: cx - r.left, y: cy - r.top };
+  };
+
+  const startPinch = () => {
+    const [a, b] = [...touches.current.values()];
+    pendingTouch.current = null;
+    if (painting.current) interactionRef.current?.onUp();
+    painting.current = false;
+    pan.current = null;
+    const v = viewRef.current;
+    pinch.current = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, s: v.s, x: v.x, y: v.y };
+  };
+
+  const movePinch = () => {
+    const p = pinch.current;
+    if (!p) return;
+    const [a, b] = [...touches.current.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    const mx = (a.x + b.x) / 2;
+    const my = (a.y + b.y) / 2;
+    const s = Math.min(MAX_S, Math.max(MIN_S, p.s * (d / p.d)));
+    // 처음 두 손가락 가운데에 있던 지점이 지금 가운데에 오도록
+    const cx = (p.mx - p.x) / p.s;
+    const cy = (p.my - p.y) / p.s;
+    setView(clamp({ s, x: mx - cx * s, y: my - cy * s }));
+  };
+
+  /** 포인터 고정 (지원 안 되는 환경에서는 무시) */
+  const capture = (e: React.PointerEvent) => {
+    try {
+      (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+    } catch {
+      /* 무시 */
+    }
+  };
+
+  const stopAll = (e?: React.PointerEvent) => {
+    if (e) touches.current.delete(e.pointerId);
+    // 짧게 누르고 뗀 터치 = 탭 → 클릭과 같게 처리
+    if (pendingTouch.current && e && touches.current.size === 0) commitTouch(e.clientX, e.clientY);
+    if (touches.current.size >= 2) return;
+    if (pinch.current) {
+      pinch.current = null;
+      return;
+    }
     if (painting.current) interactionRef.current?.onUp();
     painting.current = false;
     pan.current = null;
@@ -157,22 +230,47 @@ export function ZoomPan({ width, height, fitKey, interaction, focus, children }:
       className={`zoompan ${interaction ? 'editable' : ''}`}
       onPointerDown={(e) => {
         if ((e.target as HTMLElement).closest('.zoom-tools')) return;
+        if (e.pointerType === 'touch') {
+          touches.current.set(e.pointerId, local(e.clientX, e.clientY));
+          capture(e);
+          if (touches.current.size === 2) {
+            startPinch();
+            return;
+          }
+          if (touches.current.size > 2) return;
+          // 첫 손가락: 바로 연결하지 않고 대기
+          pendingTouch.current = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y };
+          return;
+        }
         const it = interactionRef.current;
         if (e.button === 0 && it) {
           const cell = cellAt(e.clientX, e.clientY);
           if (cell && it.onDown(cell)) {
             painting.current = true;
             lastCell.current = `${cell.c},${cell.r}`;
-            (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+            capture(e);
             return;
           }
         }
         if (e.button !== 0 && e.button !== 1) return;
         e.preventDefault();
-        (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+        capture(e);
         pan.current = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y };
       }}
       onPointerMove={(e) => {
+        if (e.pointerType === 'touch' && touches.current.has(e.pointerId)) {
+          touches.current.set(e.pointerId, local(e.clientX, e.clientY));
+          if (pinch.current && touches.current.size >= 2) {
+            movePinch();
+            return;
+          }
+        }
+        if (pinch.current) return;
+        if (pendingTouch.current) {
+          const p = pendingTouch.current;
+          if (Math.hypot(e.clientX - p.x, e.clientY - p.y) < 6) return;
+          commitTouch(e.clientX, e.clientY);
+        }
         if (painting.current) {
           const cell = cellAt(e.clientX, e.clientY);
           const key = cell ? `${cell.c},${cell.r}` : '';
@@ -185,8 +283,8 @@ export function ZoomPan({ width, height, fitKey, interaction, focus, children }:
         const d = pan.current;
         if (d) setView((v) => clamp({ ...v, x: d.vx + e.clientX - d.x, y: d.vy + e.clientY - d.y }));
       }}
-      onPointerUp={stopAll}
-      onPointerCancel={stopAll}
+      onPointerUp={(e) => stopAll(e)}
+      onPointerCancel={(e) => stopAll(e)}
     >
       <div className="zoompan-inner" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.s})` }}>
         {children}
