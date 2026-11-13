@@ -1,6 +1,7 @@
 import type { Cell, ControllerSpec, Issue, Project } from '../types';
 import { effectivePortCapacity, effectiveUnitCapacity } from './portCapacity';
 import { checkGroups, inBounds } from './wiringCheck';
+import { cellPixels, gridLayout } from './gridLayout';
 
 export interface PortRun {
   /** dataRuns 배열 순서 (색상 기준) */
@@ -43,6 +44,8 @@ export function portLabel(unit: number, port: number, multiUnit: boolean): strin
 /** 수동 데이터 배선 검사: 포트 용량, 포트 번호, 컨트롤러 용량 */
 export function buildDataMap(p: Project, ctrl: ControllerSpec): DataMapResult {
   const issues: Issue[] = [];
+  const grid = gridLayout(p);
+  // 포트당 최대 캐비닛 수는 기본 캐비닛 기준 (크기가 다른 캐비닛은 실제 픽셀로 사용률 계산)
   const cabPx = p.cabinet.widthPx * p.cabinet.heightPx;
   const portCapacity = effectivePortCapacity(ctrl, p.bitDepth, p.frameRate);
   const unitCapacity = effectiveUnitCapacity(ctrl, p.bitDepth, p.frameRate);
@@ -66,7 +69,7 @@ export function buildDataMap(p: Project, ctrl: ControllerSpec): DataMapResult {
 
   const ports: PortRun[] = p.dataRuns.map((r, index) => {
     const cells = r.cells.filter((c) => inBounds(p, c));
-    const pixels = cells.length * cabPx;
+    const pixels = cells.reduce((s, c) => s + cellPixels(grid, c), 0);
     return {
       index, id: r.id, unit: r.unit, portNo: r.port,
       label: portLabel(r.unit, r.port, multiUnit),
@@ -98,8 +101,12 @@ export function buildDataMap(p: Project, ctrl: ControllerSpec): DataMapResult {
     if (cells.length) {
       const cs = cells.map((c) => c.c);
       const rs = cells.map((c) => c.r);
-      widthPx = (Math.max(...cs) - Math.min(...cs) + 1) * p.cabinet.widthPx;
-      heightPx = (Math.max(...rs) - Math.min(...rs) + 1) * p.cabinet.heightPx;
+      const c0 = Math.min(...cs);
+      const c1 = Math.max(...cs);
+      const r0 = Math.min(...rs);
+      const r1 = Math.max(...rs);
+      widthPx = grid.colStartPx[c1] + grid.cols[c1].px - grid.colStartPx[c0];
+      heightPx = grid.rowStartPx[r1] + grid.rows[r1].px - grid.rowStartPx[r0];
     }
     const name = multiUnit ? `컨트롤러 #${u + 1}` : ctrl.model;
     if (pixels > unitCapacity) {

@@ -1,4 +1,5 @@
 import type { Project } from '../types';
+import { gridLayout } from './gridLayout';
 
 export interface ScreenInfo {
   cabinetCount: number;
@@ -17,10 +18,13 @@ export interface ScreenInfo {
 /** 화면 전체 크기·해상도 계산 */
 export function computeScreen(p: Project): ScreenInfo {
   const { cabinet: cab, cols, rows } = p;
-  const widthPx = cab.widthPx * cols;
-  const heightPx = cab.heightPx * rows;
-  const widthMm = cab.widthMm * cols;
-  const heightMm = cab.heightMm * rows;
+  const g = gridLayout(p);
+  const { widthPx, heightPx, widthMm, heightMm } = g;
+  // 크기가 다른 캐비닛의 무게는 기본 캐비닛 대비 면적 비례로 추정
+  const baseArea = cab.widthMm * cab.heightMm;
+  const weightKg = baseArea > 0
+    ? g.cols.reduce((s, col) => s + g.rows.reduce((t, row) => t + cab.weightKg * (col.mm * row.mm) / baseArea, 0), 0)
+    : 0;
   return {
     cabinetCount: cols * rows,
     cabinetPixels: cab.widthPx * cab.heightPx,
@@ -30,7 +34,7 @@ export function computeScreen(p: Project): ScreenInfo {
     widthMm,
     heightMm,
     areaM2: (widthMm * heightMm) / 1_000_000,
-    weightKg: cab.weightKg * cols * rows,
+    weightKg,
     pitchMm: cab.widthPx > 0 ? cab.widthMm / cab.widthPx : 0,
     aspect: aspectText(widthPx, heightPx),
   };

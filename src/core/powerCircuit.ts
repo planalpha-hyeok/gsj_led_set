@@ -1,5 +1,7 @@
 import type { Cell, Issue, Phase, Project } from '../types';
 import { checkGroups, inBounds } from './wiringCheck';
+import { gridLayout } from './gridLayout';
+import { cellPowerW } from './powerCalc';
 
 export interface PowerCircuit {
   index: number;
@@ -30,6 +32,7 @@ export function buildCircuits(p: Project, cabinetW: number, cabinetA: number): C
   const circuitLimitA = Math.min(breakerLimit, pw.chainLimitA);
   const cabinetsPerCircuit = cabinetA > 0 ? Math.floor(circuitLimitA / cabinetA) : 0;
   const three = pw.system === 'three';
+  const grid = gridLayout(p);
 
   if (cabinetsPerCircuit < 1) {
     issues.push({ severity: 'error', message: `캐비닛 1개 전류(${cabinetA.toFixed(2)}A)가 회로 허용 전류(${circuitLimitA.toFixed(1)}A)보다 큽니다` });
@@ -40,14 +43,15 @@ export function buildCircuits(p: Project, cabinetW: number, cabinetA: number): C
 
   const circuits: PowerCircuit[] = p.powerRuns.map((r, index) => {
     const cells = r.cells.filter((c) => inBounds(p, c));
-    const currentA = cells.length * cabinetA;
+    const watts = cells.reduce((s, c) => s + cellPowerW(p, grid, c, cabinetW), 0);
+    const currentA = cabinetW > 0 ? watts * (cabinetA / cabinetW) : 0;
     const label = `C${index + 1}`;
     if (circuitLimitA > 0 && currentA > circuitLimitA) {
       issues.push({ severity: 'error', message: `${label}: 회로 과부하 ${currentA.toFixed(1)}A / ${circuitLimitA.toFixed(1)}A (최대 캐비닛 ${cabinetsPerCircuit}개)` });
     }
     return {
       index, id: r.id, label, cells, currentA,
-      watts: cells.length * cabinetW,
+      watts,
       load: circuitLimitA > 0 ? currentA / circuitLimitA : 0,
       phase: three ? r.phase : 'L1',
     };

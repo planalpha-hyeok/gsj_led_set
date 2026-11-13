@@ -78,6 +78,8 @@ export function normalizeProject(raw: Partial<Project>): Project {
     ...raw,
     cabinet,
     power,
+    colModules: raw.colModules && typeof raw.colModules === 'object' ? raw.colModules : {},
+    rowModules: raw.rowModules && typeof raw.rowModules === 'object' ? raw.rowModules : {},
     dataRuns: Array.isArray(raw.dataRuns) ? raw.dataRuns : d.dataRuns,
     powerRuns: Array.isArray(raw.powerRuns) ? raw.powerRuns : d.powerRuns,
     customControllers: raw.customControllers ?? [],

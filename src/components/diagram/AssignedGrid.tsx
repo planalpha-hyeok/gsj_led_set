@@ -1,5 +1,5 @@
 import type { Cell, Project } from '../../types';
-import { cellName, cellOrigin, type Geometry } from './geometry';
+import { cellName, cellRect, type Geometry } from './geometry';
 import { MONO_STACK, themeColors, type DiagramTheme } from './palette';
 
 export interface Assignment {
@@ -30,13 +30,13 @@ export function AssignedGrid({ project: p, geom: g, theme, groups, colorOf, name
     <g>
       {Array.from({ length: p.rows }, (_, r) =>
         Array.from({ length: p.cols }, (_, c) => {
-          const o = cellOrigin(g, { c, r });
+          const o = cellRect(g, { c, r });
           const hit = lookup.get(`${c},${r}`);
           const color = hit ? colorOf(hit.group) : t.cellStroke;
           const dim = activeGroup !== undefined && hit !== undefined && hit.group !== activeGroup;
           return (
             <g key={`${c}-${r}`}>
-              <rect data-c={c} data-r={r} x={o.x + 2} y={o.y + 2} width={g.cellW - 4} height={g.cellH - 4} rx={4}
+              <rect data-c={c} data-r={r} x={o.x + 2} y={o.y + 2} width={o.w - 4} height={o.h - 4} rx={4}
                 fill={hit ? color : t.cell} fillOpacity={hit ? (dim ? 0.07 : 0.2) : 1}
                 stroke={color} strokeOpacity={hit ? (dim ? 0.35 : 0.8) : 1} strokeWidth={1.5}>
                 <title>{`${cellName({ c, r })}${hit ? ` · ${nameOf(hit.group)} · ${hit.order}번째` : ' · 미연결'}`}</title>
@@ -45,7 +45,7 @@ export function AssignedGrid({ project: p, geom: g, theme, groups, colorOf, name
                 {cellName({ c, r })}
               </text>
               {hit && (
-                <text x={o.x + g.cellW - 8} y={o.y + g.cellH - 8} fill={t.text} fontSize={g.font * 0.8}
+                <text x={o.x + o.w - 8} y={o.y + o.h - 8} fill={t.text} fontSize={g.font * 0.8}
                   textAnchor="end" fontFamily={MONO_STACK} fontWeight={600}>{hit.order}</text>
               )}
             </g>

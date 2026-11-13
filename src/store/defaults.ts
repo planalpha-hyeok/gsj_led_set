@@ -47,6 +47,8 @@ export function defaultProject(): Project {
       derate: 0.8,
       chainLimitA: 16,
     },
+    colModules: {},
+    rowModules: {},
     dataRuns: [newDataRun(0, 1)],
     powerRuns: [newPowerRun('L1')],
     customControllers: [],

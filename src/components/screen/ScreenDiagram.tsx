@@ -1,7 +1,8 @@
 import type { Analysis } from '../../core/analyze';
 import type { Project } from '../../types';
 import { DiagramBase } from '../diagram/DiagramBase';
-import { cellName, cellOrigin, computeGeometry } from '../diagram/geometry';
+import { gridLayout } from '../../core/gridLayout';
+import { cellName, cellRect, computeGeometry } from '../diagram/geometry';
 import { MONO_STACK, themeColors, type DiagramTheme } from '../diagram/palette';
 
 interface Props {
@@ -14,6 +15,7 @@ interface Props {
 export function ScreenDiagram({ project: p, analysis: a, theme }: Props) {
   const t = themeColors[theme];
   const g = computeGeometry(p);
+  const lay = gridLayout(p);
   const s = a.screen;
   return (
     <DiagramBase
@@ -27,16 +29,26 @@ export function ScreenDiagram({ project: p, analysis: a, theme }: Props) {
         stroke={t.accent} strokeOpacity={0.35} strokeWidth={2} />
       {Array.from({ length: p.rows }, (_, r) =>
         Array.from({ length: p.cols }, (_, c) => {
-          const o = cellOrigin(g, { c, r });
+          const o = cellRect(g, { c, r });
+          const changed = lay.cols[c].changed || lay.rows[r].changed;
+          const x0 = lay.colStartPx[c];
+          const y0 = lay.rowStartPx[r];
+          const f = Math.min(g.font, o.w * 0.17, o.h * 0.17);
           return (
             <g key={`${c}-${r}`}>
-              <rect x={o.x + 2} y={o.y + 2} width={g.cellW - 4} height={g.cellH - 4} rx={4} fill={t.cell} stroke={t.cellStroke} strokeWidth={1.5}>
-                <title>{`${cellName({ c, r })} · X ${c * p.cabinet.widthPx}, Y ${r * p.cabinet.heightPx}`}</title>
+              <rect x={o.x + 2} y={o.y + 2} width={o.w - 4} height={o.h - 4} rx={4}
+                fill={changed ? t.accent : t.cell} fillOpacity={changed ? 0.1 : 1}
+                stroke={changed ? t.accent : t.cellStroke} strokeOpacity={changed ? 0.6 : 1} strokeWidth={1.5}>
+                <title>{`${cellName({ c, r })} · ${lay.cols[c].mm}×${lay.rows[r].mm}mm · ${lay.cols[c].px}×${lay.rows[r].px}px · X ${x0}, Y ${y0}`}</title>
               </rect>
-              <text x={o.x + g.cellW / 2} y={o.y + g.cellH / 2 - g.font * 0.3} fill={t.text} fontSize={g.font}
+              <text x={o.x + o.w / 2} y={o.y + o.h / 2 - f * 0.5} fill={t.text} fontSize={f}
                 textAnchor="middle" fontWeight={700} fontFamily={MONO_STACK}>{cellName({ c, r })}</text>
-              <text x={o.x + g.cellW / 2} y={o.y + g.cellH / 2 + g.font * 0.9} fill={t.textMuted} fontSize={g.font * 0.66}
-                textAnchor="middle" fontFamily={MONO_STACK}>{`${c * p.cabinet.widthPx},${r * p.cabinet.heightPx}`}</text>
+              <text x={o.x + o.w / 2} y={o.y + o.h / 2 + f * 0.6} fill={t.textMuted} fontSize={f * 0.66}
+                textAnchor="middle" fontFamily={MONO_STACK}>{`${x0},${y0}`}</text>
+              {changed && (
+                <text x={o.x + o.w / 2} y={o.y + o.h / 2 + f * 1.4} fill={t.accent} fontSize={f * 0.62}
+                  textAnchor="middle" fontFamily={MONO_STACK} fontWeight={700}>{`${lay.cols[c].mm}×${lay.rows[r].mm}`}</text>
+              )}
             </g>
           );
         }),
