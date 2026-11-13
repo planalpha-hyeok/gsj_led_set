@@ -1,4 +1,5 @@
 import type { Issue, Project, ReceivingCardSpec } from '../types';
+import { gridLayout } from './gridLayout';
 
 export interface CardResult {
   cardsPerCabinet: number;
@@ -14,9 +15,13 @@ export interface CardResult {
  */
 export function checkReceivingCard(p: Project, card: ReceivingCardSpec): CardResult {
   const issues: Issue[] = [];
-  const cabPx = p.cabinet.widthPx * p.cabinet.heightPx;
+  // 가장 큰 캐비닛 기준으로 확인, 총 장수는 캐비닛마다 계산해서 합산
+  const g = gridLayout(p);
+  const cellPx = g.cols.flatMap((col) => g.rows.map((row) => col.px * row.px));
+  const cabPx = Math.max(0, ...cellPx);
   const cardsPerCabinet = Math.max(1, Math.ceil(cabPx / card.maxPixels));
   const load = cabPx / (card.maxPixels * cardsPerCabinet);
+  const totalCards = cellPx.reduce((s, px) => s + Math.max(1, Math.ceil(px / card.maxPixels)), 0);
 
   if (cardsPerCabinet > 1) {
     issues.push({
@@ -24,5 +29,5 @@ export function checkReceivingCard(p: Project, card: ReceivingCardSpec): CardRes
       message: `캐비닛 픽셀(${cabPx.toLocaleString()})이 ${card.model} 용량(${card.loadText})을 넘음 → 캐비닛당 ${cardsPerCabinet}장 필요`,
     });
   }
-  return { cardsPerCabinet, totalCards: cardsPerCabinet * p.cols * p.rows, load, issues };
+  return { cardsPerCabinet, totalCards, load, issues };
 }

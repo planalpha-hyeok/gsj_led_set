@@ -126,6 +126,12 @@ export interface Project {
   power: PowerSettings;
   dataRuns: DataRun[];
   powerRuns: PowerRun[];
+  /**
+   * 열별 폭·행별 높이 변경 (모듈 장수, 키 = 열/행 번호 0부터)
+   * 모듈 조합 캐비닛일 때만 적용. 없는 열/행은 기본 캐비닛 크기
+   */
+  colModules: Record<string, number>;
+  rowModules: Record<string, number>;
   customControllers: ControllerSpec[];
   customCards: ReceivingCardSpec[];
 }

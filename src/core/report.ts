@@ -1,5 +1,6 @@
 import type { Project } from '../types';
 import type { Analysis } from './analyze';
+import { cabinetSizeCounts, gridLayout } from './gridLayout';
 
 export interface ReportRow {
   label: string;
@@ -53,8 +54,15 @@ export function buildReport(p: Project, a: Analysis): Report {
     { label: '회로 허용 전류', value: `${a.circuits.circuitLimitA.toFixed(1)} A`, note: `차단기 ${p.power.breakerA}A × ${Math.round(p.power.derate * 100)}%, 케이블 ${p.power.chainLimitA}A 중 작은 값` },
   ];
 
+  // 크기가 섞인 경우 크기별 수량
+  const sizes = cabinetSizeCounts(gridLayout(p));
+  const sizeRows: ReportRow[] = sizes.length > 1
+    ? sizes.map((x) => ({ label: `  └ ${x.widthMm}×${x.heightMm}`, value: `${x.count} 개`, note: `${x.widthPx}×${x.heightPx}px` }))
+    : [];
+
   const bom: ReportRow[] = [
     { label: '캐비닛', value: `${n(s.cabinetCount)} 개` },
+    ...sizeRows,
     { label: '수신카드', value: `${n(a.cardResult?.totalCards ?? 0)} 장` },
     { label: '컨트롤러', value: `${units} 대` },
     { label: '데이터 케이블 (컨트롤러 → 캐비닛)', value: `${ports.length} 개` },
