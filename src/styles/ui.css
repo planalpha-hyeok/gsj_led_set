@@ -131,7 +131,7 @@
 }
 .field-unit { padding-right: 10px; color: var(--muted); font-size: 11.5px; font-family: var(--font-mono); }
 
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .stack { display: flex; flex-direction: column; gap: 12px; }
 
 .hint { margin: 0; font-size: 11.5px; color: var(--muted); line-height: 1.5; }
@@ -179,7 +179,7 @@
 .corner-picker {
   position: relative;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-template-rows: 1fr 1fr;
   width: 88px;
   height: 56px;
@@ -257,7 +257,7 @@
 .status-pill.warn { background: var(--warn-soft); color: var(--warn); }
 .status-pill.err { background: var(--err-soft); color: var(--err); }
 
-.stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); flex-shrink: 0; }
+.stat-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gap); flex-shrink: 0; }
 .stat.wide { grid-column: span 2; }
 .stat.wide .stat-value { font-size: 22px; }
 .stat.accent { background: var(--accent); border-color: var(--accent); }
@@ -357,6 +357,7 @@
 }
 .modal {
   max-width: 100%;
+  min-width: 0;
   max-height: calc(100vh - 32px);
   display: flex;
   flex-direction: column;
@@ -368,7 +369,7 @@
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px; }
 .modal-head h2 { margin: 0; font-size: 15px; }
 .modal-body { padding: 4px 16px 16px; overflow-y: auto; }
-.modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); }
+.modal-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); }
 
 .project-list { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .project-list li { display: flex; align-items: center; gap: 8px; padding: 4px 8px 4px 4px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--panel-2); }
@@ -376,7 +377,8 @@
 .project-list li.empty { padding: 20px; justify-content: center; color: var(--muted); }
 .project-open { flex: 1; display: flex; flex-direction: column; gap: 2px; text-align: left; border: 0; background: none; padding: 8px; cursor: pointer; border-radius: var(--radius-s); min-width: 0; }
 .project-open:hover { background: var(--panel-3); }
-.project-open span { font-size: 11px; color: var(--muted); }
+.project-open span { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+.project-open strong { overflow-wrap: anywhere; }
 .tag { font-size: 11px; color: var(--accent); font-weight: 700; padding: 0 6px; }
 
 /* ── 수동 배선 편집 ── */
@@ -541,6 +543,7 @@ kbd {
 .menu-item:hover { background: var(--panel-2); }
 .menu-item:disabled { opacity: 0.5; }
 .menu-item.xs-only { display: none; }
+@media (min-width: 1100px) { .menu-item.narrow-only { display: none !important; } }
 .tab-short { display: none; }
 .tab, .btn, .icon-btn { white-space: nowrap; }
 
@@ -560,3 +563,10 @@ kbd {
   .xs-hide { display: none !important; }
   .menu-item.xs-only { display: flex; }
 }
+
+/* 앱 설치 안내 */
+.install-steps { display: flex; flex-direction: column; gap: 10px; font-size: 13px; color: var(--text-2); }
+.install-steps p { margin: 0; }
+.install-steps dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; }
+.install-steps dt { font-weight: 700; color: var(--text); }
+.install-steps dd { margin: 0; }
