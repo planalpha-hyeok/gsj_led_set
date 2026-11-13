@@ -584,3 +584,33 @@ kbd {
   font-size: 12px;
   font-weight: 600;
 }
+
+/* 크기가 다른 열/행 */
+.track-overrides { display: flex; flex-direction: column; gap: 14px; padding-top: 4px; border-top: 1px dashed var(--line); }
+.track-editor { display: flex; flex-direction: column; gap: 7px; padding-top: 10px; }
+.track-editor .muted { color: var(--muted); font-weight: 400; }
+.track-add { display: flex; gap: 6px; }
+.track-add select {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--line-strong);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 12px;
+}
+.track-chip { cursor: default; padding-right: 4px; }
+.chip-x {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.chip-x:hover { background: var(--err-soft); color: var(--err); }

@@ -1,3 +1,4 @@
+import { gridLayout } from '../../core/gridLayout';
 import type { ReactNode } from 'react';
 import type { Project } from '../../types';
 import { colName, type Geometry } from './geometry';
@@ -16,8 +17,9 @@ interface Props {
 export function DiagramBase({ project: p, geom: g, theme, title, subtitle, children }: Props) {
   const t = themeColors[theme];
   const rulerFont = Math.max(11, g.font * 0.8);
-  const totalW = p.cabinet.widthMm * p.cols;
-  const totalH = p.cabinet.heightMm * p.rows;
+  const lay = gridLayout(p);
+  const totalW = lay.widthMm;
+  const totalH = lay.heightMm;
 
   return (
     <svg
@@ -34,20 +36,24 @@ export function DiagramBase({ project: p, geom: g, theme, title, subtitle, child
 
       {/* 열 이름 (A, B, C...) */}
       {Array.from({ length: p.cols }, (_, c) => (
-        <text key={`c${c}`} x={g.padL + c * g.cellW + g.cellW / 2} y={g.padT - 10} fill={t.textMuted}
-          fontSize={rulerFont} textAnchor="middle" fontFamily={MONO_STACK}>{colName(c)}</text>
+        <text key={`c${c}`} x={g.colX[c] + g.colW[c] / 2} y={g.padT - 10} fill={lay.cols[c].changed ? t.accent : t.textMuted}
+          fontSize={rulerFont} textAnchor="middle" fontFamily={MONO_STACK} fontWeight={lay.cols[c].changed ? 700 : 400}>
+          {lay.cols[c].changed ? `${colName(c)} ${lay.cols[c].mm}` : colName(c)}
+        </text>
       ))}
       {/* 행 번호 (1, 2, 3...) */}
       {Array.from({ length: p.rows }, (_, r) => (
-        <text key={`r${r}`} x={g.padL - 12} y={g.padT + r * g.cellH + g.cellH / 2} fill={t.textMuted}
-          fontSize={rulerFont} textAnchor="end" dominantBaseline="central" fontFamily={MONO_STACK}>{r + 1}</text>
+        <text key={`r${r}`} x={g.padL - 12} y={g.rowY[r] + g.rowH[r] / 2} fill={lay.rows[r].changed ? t.accent : t.textMuted}
+          fontSize={rulerFont} textAnchor="end" dominantBaseline="central" fontFamily={MONO_STACK} fontWeight={lay.rows[r].changed ? 700 : 400}>
+          {lay.rows[r].changed ? `${lay.rows[r].mm} ${r + 1}` : r + 1}
+        </text>
       ))}
 
       {children}
 
       {/* 전체 크기 */}
       <text x={g.width / 2} y={g.padT + g.gridH + 28} fill={t.textMuted} fontSize={12} textAnchor="middle" fontFamily={MONO_STACK}>
-        {`${(totalW / 1000).toFixed(2)} m × ${(totalH / 1000).toFixed(2)} m · ${p.cabinet.widthPx * p.cols} × ${p.cabinet.heightPx * p.rows} px`}
+        {`${(totalW / 1000).toFixed(2)} m × ${(totalH / 1000).toFixed(2)} m · ${lay.widthPx} × ${lay.heightPx} px`}
       </text>
     </svg>
   );

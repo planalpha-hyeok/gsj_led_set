@@ -166,3 +166,43 @@ describe('㎡당 W 전력', () => {
     expect(p.cabinet.widthPx).toBe(128);
   });
 });
+
+describe('크기 혼합 화면 (열별 폭·행별 높이)', () => {
+  // 기본 640×480(2×3장, 344×258px) 5×3, E열만 1장(320mm), 3행만 2장(320mm)
+  const mixed = () => {
+    const p = defaultProject();
+    p.colModules = { '4': 1 };
+    p.rowModules = { '2': 2 };
+    return p;
+  };
+  it('전체 크기·해상도', () => {
+    const a = analyze(mixed());
+    expect([a.screen.widthMm, a.screen.heightMm]).toEqual([640 * 4 + 320, 480 * 2 + 320]);
+    expect([a.screen.widthPx, a.screen.heightPx]).toEqual([344 * 4 + 172, 258 * 2 + 172]);
+  });
+  it('모서리 칸 = 320×320, 크기별 수량', async () => {
+    const { gridLayout, cellSize, cabinetSizeCounts } = await import('./gridLayout');
+    const g = gridLayout(mixed());
+    expect(cellSize(g, { c: 4, r: 2 })).toEqual({ widthMm: 320, heightMm: 320, widthPx: 172, heightPx: 172 });
+    expect(cabinetSizeCounts(g).map((x) => `${x.widthMm}x${x.heightMm}:${x.count}`)).toEqual(['640x480:8', '640x320:4', '320x480:2', '320x320:1']);
+  });
+  it('포트 픽셀은 캐비닛마다 실제 크기로 합산', () => {
+    const p = mixed();
+    p.dataRuns = [{ id: 'a', unit: 0, port: 1, cells: [{ c: 4, r: 0 }, { c: 4, r: 1 }, { c: 4, r: 2 }] }];
+    expect(analyze(p).data!.ports[0].pixels).toBe(172 * 258 * 2 + 172 * 172);
+  });
+  it('㎡당 W 기준이면 캐비닛 면적별 전력, SMPS 기준이면 크기 무관 동일', () => {
+    const p = mixed();
+    p.cabinet = { ...p.cabinet, powerMode: 'area', powerPerM2: 600 };
+    const area = (2.88 * 1.28);
+    expect(analyze(p).power.totalW).toBeCloseTo(600 * area, 6);
+    const q = mixed();
+    expect(analyze(q).power.totalW).toBeCloseTo((200 / 0.85) * 15, 6);
+  });
+  it('모듈 조합이 아닌 캐비닛은 변경 무시', async () => {
+    const { gridLayout } = await import('./gridLayout');
+    const p = mixed();
+    delete p.cabinet.moduleId;
+    expect(gridLayout(p).widthMm).toBe(640 * 5);
+  });
+});

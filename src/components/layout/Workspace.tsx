@@ -8,7 +8,7 @@ import { PowerDiagram } from '../power/PowerDiagram';
 import { ReportView } from '../report/ReportView';
 import { ScreenDiagram } from '../screen/ScreenDiagram';
 import { Icon, type IconName } from '../ui/Icon';
-import { cellOrigin, computeGeometry } from '../diagram/geometry';
+import { cellRect, computeGeometry } from '../diagram/geometry';
 import type { CellInteraction } from '../diagram/ZoomPan';
 import { useKeyboardWiring, type KeyboardWiring } from '../wiring/useKeyboardWiring';
 import { useWiringEditor } from '../wiring/useWiringEditor';
@@ -65,8 +65,8 @@ export function Workspace({ tab, onTab }: Props) {
     const isData = tab === 'mapping';
     const kb = isData ? dataKb : powerKb;
     const g = computeGeometry(p);
-    const co = cellOrigin(g, kb.cursor);
-    const focus = { x: co.x, y: co.y, w: g.cellW, h: g.cellH };
+    const co = cellRect(g, kb.cursor);
+    const focus = { x: co.x, y: co.y, w: co.w, h: co.h };
     const activeIndex = isData
       ? p.dataRuns.findIndex((r) => r.id === dataActive)
       : p.powerRuns.findIndex((r) => r.id === powerActive);
