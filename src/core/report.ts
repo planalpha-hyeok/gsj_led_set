@@ -38,8 +38,11 @@ export function buildReport(p: Project, a: Analysis): Report {
   ];
 
   const power: ReportRow[] = [
-    { label: 'SMPS 구성', value: `${p.cabinet.smpsW}W × ${p.cabinet.smpsCount}개 / 캐비닛`, note: `효율 ${Math.round(p.cabinet.smpsEfficiency * 100)}%` },
-    { label: '캐비닛 입력 전력', value: `${pw.cabinetW.toFixed(1)} W`, note: `${pw.cabinetSmpsW}W ÷ ${p.cabinet.smpsEfficiency}` },
+    p.cabinet.powerMode === 'area'
+      ? { label: '전력 기준', value: `${p.cabinet.powerPerM2} W/㎡`, note: '사양서 소비전력 × 캐비닛 면적' }
+      : { label: 'SMPS 구성', value: `${p.cabinet.smpsW}W × ${p.cabinet.smpsCount}개 / 캐비닛`, note: `효율 ${Math.round(p.cabinet.smpsEfficiency * 100)}%` },
+    { label: '캐비닛 입력 전력', value: `${pw.cabinetW.toFixed(1)} W`,
+      note: p.cabinet.powerMode === 'area' ? `${p.cabinet.powerPerM2} × ${((p.cabinet.widthMm * p.cabinet.heightMm) / 1e6).toFixed(4)}㎡` : `${pw.cabinetSmpsW}W ÷ ${p.cabinet.smpsEfficiency}` },
     { label: '최대 전력', value: `${(pw.totalW / 1000).toFixed(2)} kW`, note: `역률 ${p.power.powerFactor}` },
     { label: '피상전력', value: `${pw.totalKVA.toFixed(2)} kVA` },
     three

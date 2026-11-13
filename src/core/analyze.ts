@@ -55,6 +55,9 @@ export function analyze(p: Project): Analysis {
   }
 
   const power = computePower(p);
+  if (power.cabinetW <= 0) {
+    issues.push({ severity: 'error', message: '캐비닛 전력이 0입니다. SMPS 또는 ㎡당 W 값을 입력하세요' });
+  }
   const circuits = buildCircuits(p, power.cabinetW, power.cabinetA);
   issues.push(...circuits.issues);
   const three = p.power.system === 'three';

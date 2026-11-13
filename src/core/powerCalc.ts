@@ -1,4 +1,5 @@
 import type { Project } from '../types';
+import { cabinetAreaM2 } from './cabinetBuild';
 
 export interface PowerTotals {
   /** 캐비닛 1개 SMPS 정격 출력 합계 (W) */
@@ -19,14 +20,16 @@ export interface PowerTotals {
 
 /**
  * 전력·전류 계산 (항상 최대 전력 기준)
- * 캐비닛 입력 전력 = SMPS 정격 출력 × 개수 ÷ 효율
+ * 캐비닛 입력 전력
+ * - SMPS 기준: SMPS 정격 출력 × 개수 ÷ 효율
+ * - ㎡당 W 기준: 사양서 소비전력(W/㎡) × 캐비닛 면적 (이미 입력 전력이므로 효율로 나누지 않음)
  */
 export function computePower(p: Project): PowerTotals {
   const { cabinet: cab, power: pw } = p;
   const n = p.cols * p.rows;
   const cabinetSmpsW = cab.smpsW * cab.smpsCount;
   const eff = cab.smpsEfficiency > 0 ? cab.smpsEfficiency : 1;
-  const cabinetW = cabinetSmpsW / eff;
+  const cabinetW = cab.powerMode === 'area' ? cab.powerPerM2 * cabinetAreaM2(cab) : cabinetSmpsW / eff;
   const pf = pw.powerFactor > 0 ? pw.powerFactor : 1;
   const totalW = cabinetW * n;
   return {

@@ -570,3 +570,17 @@ kbd {
 .install-steps dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; }
 .install-steps dt { font-weight: 700; color: var(--text); }
 .install-steps dd { margin: 0; }
+
+/* 캐비닛 설정 */
+.preset-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.cab-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding: 9px 12px;
+  border-radius: var(--radius-s);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}

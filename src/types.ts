@@ -61,8 +61,18 @@ export interface CabinetSpec {
   smpsCount: number;
   /** SMPS 효율 (0~1). 입력 전력 = 정격 × 개수 ÷ 효율 */
   smpsEfficiency: number;
+  /** 전력 계산 방식: SMPS 기준 / ㎡당 W 기준 (사양서 소비전력) */
+  powerMode: CabinetPowerMode;
+  /** ㎡당 최대 소비전력 (W/㎡, powerMode 'area'일 때) */
+  powerPerM2: number;
   weightKg: number;
+  /** 모듈 조합으로 만든 경우: 모듈 종류와 배치 (없으면 직접 입력) */
+  moduleId?: string;
+  moduleCols?: number;
+  moduleRows?: number;
 }
+
+export type CabinetPowerMode = 'smps' | 'area';
 
 export type PowerSystem = 'single' | 'three';
 
