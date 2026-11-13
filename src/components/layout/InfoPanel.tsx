@@ -32,7 +32,7 @@ export function InfoPanel({ open }: { open: boolean }) {
   const warnCount = issues.filter((i) => i.severity === 'warning').length;
 
   return (
-    <aside className={`info ${open ? 'open' : ''}`} aria-hidden={!open}>
+    <aside className={`result-panel ${open ? 'open' : ''}`} aria-hidden={!open}>
       <div className={`status-pill ${errCount ? 'err' : warnCount ? 'warn' : 'ok'}`}>
         <Icon name={errCount || warnCount ? 'alert' : 'check'} size={15} />
         {errCount ? `오류 ${errCount}건` : warnCount ? `주의 ${warnCount}건` : '문제 없음'}

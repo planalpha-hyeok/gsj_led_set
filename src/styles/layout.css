@@ -16,11 +16,11 @@
 .body.wide.left-open { grid-template-columns: 320px minmax(0, 1fr); }
 .body.wide.right-open { grid-template-columns: minmax(0, 1fr) 300px; }
 .body.wide.left-open.right-open { grid-template-columns: 320px minmax(0, 1fr) 300px; }
-.body.wide .sidebar:not(.open), .body.wide .info:not(.open) { display: none; }
+.body.wide .sidebar:not(.open), .body.wide .result-panel:not(.open) { display: none; }
 
 /* 좁은 화면: 배선도가 전체 폭, 패널은 위에 덮는 서랍 */
 .body.narrow { grid-template-columns: minmax(0, 1fr); }
-.body.narrow .sidebar, .body.narrow .info {
+.body.narrow .sidebar, .body.narrow .result-panel {
   position: absolute;
   top: 0;
   bottom: var(--gap);
@@ -34,8 +34,8 @@
   visibility: hidden;
 }
 .body.narrow .sidebar { left: var(--gap); transform: translateX(calc(-100% - var(--gap) * 2)); }
-.body.narrow .info { right: var(--gap); transform: translateX(calc(100% + var(--gap) * 2)); }
-.body.narrow .sidebar.open, .body.narrow .info.open { transform: none; visibility: visible; }
+.body.narrow .result-panel { right: var(--gap); transform: translateX(calc(100% + var(--gap) * 2)); }
+.body.narrow .sidebar.open, .body.narrow .result-panel.open { transform: none; visibility: visible; }
 .drawer-backdrop {
   position: absolute;
   inset: 0;
@@ -101,6 +101,7 @@
 /* ── 왼쪽 설정: 카드 묶음 ── */
 .sidebar {
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: var(--gap);
@@ -166,8 +167,9 @@
 }
 
 /* ── 오른쪽 결과: 타일 묶음 ── */
-.info {
+.result-panel {
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: var(--gap);

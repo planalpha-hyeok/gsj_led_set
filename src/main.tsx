@@ -8,6 +8,9 @@ import './styles/layout.css';
 import './styles/ui.css';
 import './styles/report.css';
 import App from './App';
+import { registerServiceWorker } from './store/pwa';
+
+registerServiceWorker();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
