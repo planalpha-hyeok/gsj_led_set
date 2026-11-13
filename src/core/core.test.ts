@@ -4,6 +4,8 @@ import { normalizeProject } from '../store/persistence';
 import { appendCell, findOwner, pruneRuns, removeLast, truncateAfter } from '../store/wiringOps';
 import type { Cell, ControllerSpec, DataRun, Project } from '../types';
 import { analyze } from './analyze';
+import { cabinetFromModules } from './cabinetBuild';
+import { findModule } from '../data/modules';
 import { nextFreePort } from './dataMapping';
 import { effectivePortCapacity } from './portCapacity';
 import { computePhaseLoads, suggestPhase } from './threePhase';
@@ -125,5 +127,42 @@ describe('포트 용량 / 3상', () => {
     expect(r.phases.map((x) => x.currentA)).toEqual([10, 10, 5]);
     expect(r.imbalancePct).toBeCloseTo((5 / (25 / 3)) * 100, 6);
     expect(suggestPhase(r.phases)).toBe('L3');
+  });
+});
+
+describe('모듈 조합 캐비닛', () => {
+  const base = defaultProject().cabinet;
+  it('320×160 P1.86 2×4 = 640×640, 344×344px', () => {
+    const c = cabinetFromModules(base, findModule('m320-p186')!, 2, 4);
+    expect([c.widthMm, c.heightMm, c.widthPx, c.heightPx]).toEqual([640, 640, 344, 344]);
+    expect(c.name).toBe('640×640 P1.86 (모듈 8장)');
+  });
+  it('250×250 P1.95 2×4 = 500×1000, 256×512px', () => {
+    const c = cabinetFromModules(base, findModule('m250-p195')!, 2, 4);
+    expect([c.widthMm, c.heightMm, c.widthPx, c.heightPx]).toEqual([500, 1000, 256, 512]);
+  });
+  it('기본 캐비닛 = 640×480 P1.86 모듈 6장', () => {
+    expect(base.name).toBe('640×480 P1.86 (모듈 6장)');
+    expect([base.widthPx, base.heightPx]).toEqual([344, 258]);
+  });
+});
+
+describe('㎡당 W 전력', () => {
+  it('600W/㎡ × 640×480(0.3072㎡) = 184.32W, 효율 미적용', () => {
+    const p = defaultProject();
+    p.cabinet = { ...p.cabinet, powerMode: 'area', powerPerM2: 600 };
+    expect(analyze(p).power.cabinetW).toBeCloseTo(184.32, 6);
+  });
+  it('전력 0이면 오류', () => {
+    const p = defaultProject();
+    p.cabinet = { ...p.cabinet, powerMode: 'area', powerPerM2: 0 };
+    expect(analyze(p).issues.some((i) => i.message.includes('캐비닛 전력이 0'))).toBe(true);
+  });
+  it('이전 파일(모듈 정보 없음) → 직접 입력 캐비닛, SMPS 기준', () => {
+    const raw = { ...defaultProject(), cabinet: { id: 'x', name: 'old', widthPx: 128, heightPx: 128, widthMm: 500, heightMm: 500, powerMaxW: 200, weightKg: 7 } } as unknown as Partial<Project>;
+    const p = normalizeProject(raw);
+    expect(p.cabinet.moduleId).toBeUndefined();
+    expect(p.cabinet.powerMode).toBe('smps');
+    expect(p.cabinet.widthPx).toBe(128);
   });
 });

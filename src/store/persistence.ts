@@ -67,6 +67,12 @@ export function normalizeProject(raw: Partial<Project>): Project {
   delete (power as { route?: unknown }).route;
   delete (power as { basis?: unknown }).basis;
   const cabinet = migrateCabinet({ ...d.cabinet, ...raw.cabinet });
+  // 모듈 조합 정보가 없는 이전 캐비닛은 "직접 입력"으로 (기본값의 모듈 정보가 섞이지 않게)
+  if (raw.cabinet && !raw.cabinet.moduleId) {
+    delete cabinet.moduleId;
+    delete cabinet.moduleCols;
+    delete cabinet.moduleRows;
+  }
   const p: Project = {
     ...d,
     ...raw,
@@ -93,6 +99,8 @@ function migrateCabinet(cab: Project['cabinet'] & { powerMaxW?: number; powerAvg
     out.smpsCount = 1;
     out.smpsEfficiency = 1;
   }
+  if (out.powerMode !== 'area') out.powerMode = 'smps';
+  if (typeof out.powerPerM2 !== 'number') out.powerPerM2 = 0;
   delete (out as { powerMaxW?: number }).powerMaxW;
   delete (out as { powerAvgW?: number }).powerAvgW;
   return out;
