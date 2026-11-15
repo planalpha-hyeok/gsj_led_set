@@ -206,3 +206,33 @@ describe('크기 혼합 화면 (열별 폭·행별 높이)', () => {
     expect(gridLayout(p).widthMm).toBe(640 * 5);
   });
 });
+
+describe('한 라인 최대 W', () => {
+  it('기본(차단기 20A×80%=16A, 케이블 16A, 3700W): 16A가 더 엄격 → 16A ≈ 3,344W', () => {
+    const a = analyze(defaultProject());
+    expect(a.circuits.limitBy).not.toBe('lineW');
+    expect(a.circuits.circuitLimitA).toBeCloseTo(16, 6);
+    expect(a.circuits.circuitLimitW).toBeCloseTo(16 * 220 * 0.95, 6);
+  });
+  it('차단기·케이블이 넉넉하면 3700W 기준 → 235.3W 캐비닛 15개', () => {
+    const p = defaultProject();
+    p.power = { ...p.power, breakerA: 32, chainLimitA: 25, lineLimitW: 3700 };
+    const a = analyze(p);
+    expect(a.circuits.limitBy).toBe('lineW');
+    expect(a.circuits.circuitLimitW).toBeCloseTo(3700, 6);
+    expect(a.circuits.cabinetsPerCircuit).toBe(15);
+  });
+  it('3700W 넘는 회로는 과부하 오류', () => {
+    const p = defaultProject();
+    p.power = { ...p.power, breakerA: 32, chainLimitA: 25, lineLimitW: 3700 };
+    p.powerRuns = [{ id: 'x', phase: 'L1', cells: Array.from({ length: 15 }, (_, i) => ({ c: i % 5, r: Math.floor(i / 5) })).slice(0, 15) }];
+    p.cols = 5; p.rows = 4;
+    p.powerRuns[0].cells.push({ c: 0, r: 3 });
+    expect(analyze(p).issues.some((i) => i.message.includes('회로 과부하') && i.message.includes('한 라인 최대 W'))).toBe(true);
+  });
+  it('0이면 사용 안 함', () => {
+    const p = defaultProject();
+    p.power = { ...p.power, breakerA: 32, chainLimitA: 25, lineLimitW: 0 };
+    expect(analyze(p).circuits.limitBy).toBe('cable');
+  });
+});
