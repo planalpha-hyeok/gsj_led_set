@@ -1,5 +1,6 @@
 import type { Project } from '../types';
 import type { Analysis } from './analyze';
+import { limitByLabel } from './powerCircuit';
 import { cabinetSizeCounts, gridLayout } from './gridLayout';
 
 export interface ReportRow {
@@ -51,7 +52,8 @@ export function buildReport(p: Project, a: Analysis): Report {
       : { label: '총 전류', value: `${pw.singlePhaseA.toFixed(1)} A`, note: `${p.power.phaseVoltage}V 단상` },
     { label: '메인 차단기 (참고)', value: a.mainBreakerA ? `${a.mainBreakerA} A 이상` : '분전반 분할 필요', note: `사용률 ${Math.round(p.power.derate * 100)}% 기준` },
     { label: '캐비닛 1개 전류', value: `${pw.cabinetA.toFixed(2)} A` },
-    { label: '회로 허용 전류', value: `${a.circuits.circuitLimitA.toFixed(1)} A`, note: `차단기 ${p.power.breakerA}A × ${Math.round(p.power.derate * 100)}%, 케이블 ${p.power.chainLimitA}A 중 작은 값` },
+    { label: '회로(한 라인) 허용', value: `${Math.round(a.circuits.circuitLimitW).toLocaleString()} W · ${a.circuits.circuitLimitA.toFixed(1)} A`,
+      note: `${limitByLabel[a.circuits.limitBy]} 기준 (차단기 ${p.power.breakerA}A×${Math.round(p.power.derate * 100)}%, 케이블 ${p.power.chainLimitA}A${p.power.lineLimitW > 0 ? `, 한 라인 ${p.power.lineLimitW.toLocaleString()}W` : ''} 중 가장 엄격한 값)` },
   ];
 
   // 크기가 섞인 경우 크기별 수량

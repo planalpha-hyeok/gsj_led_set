@@ -614,3 +614,18 @@ kbd {
   cursor: pointer;
 }
 .chip-x:hover { background: var(--err-soft); color: var(--err); }
+
+/* 회로 적용 한도 표시 */
+.limit-readout {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 10px;
+  align-items: baseline;
+  padding: 10px 12px;
+  border-radius: var(--radius-s);
+  background: var(--accent-soft);
+  color: var(--text-2);
+  font-size: 12px;
+}
+.limit-readout strong { color: var(--accent); font-size: 13.5px; text-align: right; }
+.limit-readout small { grid-column: 1 / -1; color: var(--muted); font-size: 11px; }

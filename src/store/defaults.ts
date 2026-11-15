@@ -46,6 +46,7 @@ export function defaultProject(): Project {
       breakerA: 20,
       derate: 0.8,
       chainLimitA: 16,
+      lineLimitW: 3700,
     },
     colModules: {},
     rowModules: {},

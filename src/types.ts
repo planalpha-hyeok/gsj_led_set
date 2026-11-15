@@ -88,6 +88,8 @@ export interface PowerSettings {
   derate: number;
   /** 전원 케이블/커넥터 1라인 허용 전류 */
   chainLimitA: number;
+  /** 한 라인(회로) 최대 전력 (W). 0이면 사용 안 함 */
+  lineLimitW: number;
 }
 
 export type Phase = 'L1' | 'L2' | 'L3';
